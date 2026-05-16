@@ -2,91 +2,79 @@
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
 #include <stdexcept>
 
+#include "hashes.h"
 #include "strmatch.h"
 
-encoder::encoder(const config &config)
-    : cfg(config),
-      prefixes(),
-      buffer(config.window_size),
-      future_loaded(0),
-      total_loaded(0) {
+encoder::encoder()
+    : bytes_loaded(0),
+      data(config::block_size),
+      tokens(),
+      head(config::total_hashes),
+      prev(config::block_size) {
 }
 
-static inline size_t match_str(std::byte *left, std::byte *right,
-                               size_t right_limit) {
+static inline uint32_t match_str(std::byte *left, std::byte *right,
+                                 uint32_t right_limit) {
     return strmatch::match(left, right, right_limit);
 }
 
-std::optional<token> encoder::encode(loader ld, bool &end) {
-    std::optional<token> res;
-    end = false;
+std::pair<std::byte *, size_t &> encoder::for_loading() {
+    return {data.data(), bytes_loaded};
+}
 
-    size_t history_size = total_loaded - future_loaded;
+constexpr uint32_t NONE = std::numeric_limits<uint32_t>::max();
 
-    size_t   best_match_len = 0;
-    uint32_t best_match_offset = 0;
+void encoder::reset() {
+    bytes_loaded = 0;
+    tokens.clear();
+    std::fill(head.begin(), head.end(), NONE);
+    std::fill(prev.begin(), prev.end(), NONE);
+}
 
-    for (size_t len = std::min(future_loaded, cfg.prefix_size); len >= 2; len--) {
-        auto candidates =
-            prefixes.find(std::span<std::byte>{buffer.data() + history_size, len});
-        if (candidates != nullptr) {
-            for (uint32_t offset : *candidates) {
-                size_t match_len =
-                    match_str(buffer.data() + history_size - offset,
-                              buffer.data() + history_size, future_loaded);
-                if (match_len > best_match_len) {
-                    best_match_len = match_len;
-                    best_match_offset = offset;
-                }
+const std::vector<token> &encoder::encode() {
+    auto calculate_hashes = [this]() {
+        for (size_t i = 0; i + 2 < bytes_loaded; i++) {
+            auto h = hashes::hash3(data.data() + i);
+            prev[i] = head[h];
+            head[h] = i;
+        }
+    };
+
+    calculate_hashes();
+
+#if 0
+    for (size_t i = 0; i < bytes_loaded; i++) {
+        std::cerr << i << " " << prev[i] << "\n";
+    }
+#endif
+
+    for (uint32_t i = 0; i < bytes_loaded;) {
+        uint32_t best_match_len = 1;
+        uint32_t best_match_pos = NONE;
+
+        uint32_t future_limit = std::min(bytes_loaded - i, config::future_limit);
+
+        for (uint32_t pos = prev[i]; pos != NONE && pos + config::window_size >= i;
+             pos = prev[pos]) {
+            uint32_t match_len =
+                match_str(data.data() + pos, data.data() + i, future_limit);
+
+            if (match_len > best_match_len) {
+                best_match_len = match_len;
+                best_match_pos = pos;
             }
-
-            if (best_match_len != 0) {
-                break;
-            }
         }
-    }
 
-    if (best_match_len == 0 && future_loaded != 0) {
-        best_match_len = 1;
-        res = buffer[history_size];
-    } else if (best_match_len > 0) {
-        res = match{best_match_offset, (uint32_t)best_match_len};
-    }
-
-    if (history_size + best_match_len > cfg.history_size) {
-        size_t erase_count = history_size + best_match_len - cfg.history_size;
-        for (size_t i = erase_count; i < total_loaded; i++) {
-            buffer[i - erase_count] = buffer[i];
+        if (best_match_len == 1) {
+            tokens.push_back(data[i]);
+        } else {
+            tokens.push_back(match{i - best_match_pos, best_match_len});
         }
-        total_loaded -= erase_count;
-        history_size = cfg.history_size;
-        future_loaded = total_loaded - history_size;
-    } else {
-        history_size += best_match_len;
-        future_loaded -= best_match_len;
+        i += best_match_len;
     }
 
-    size_t max_load = cfg.window_size - total_loaded;
-    size_t loaded = ld(buffer.data() + total_loaded, max_load);
-    future_loaded += loaded;
-    total_loaded += loaded;
-
-    if (future_loaded == 0) {
-        end = true;
-        return res;
-    }
-
-    prefixes.clear();
-    for (size_t len = cfg.prefix_size; len >= 1; len--) {
-        for (size_t offset = 1;
-             offset <= history_size && len <= offset + future_loaded; offset++) {
-            prefixes.insert(
-                std::span<std::byte>(buffer.data() + history_size - offset, len),
-                offset);
-        }
-    }
-
-    return res;
+    return tokens;
 }

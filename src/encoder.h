@@ -4,23 +4,21 @@
 #include <optional>
 #include <span>
 #include <utility>
+#include <vector>
 
 #include "config.h"
-#include "prefix_table.h"
 #include "token.h"
 
 class encoder {
-    config                 cfg;
-    prefix_table           prefixes;
-    std::vector<std::byte> buffer;
-    size_t                 total_loaded;
-    size_t                 future_loaded;
+    size_t                 bytes_loaded;
+    std::vector<std::byte> data;
+    std::vector<token>     tokens;
+    std::vector<uint32_t>  head;
+    std::vector<uint32_t>  prev;
 
 public:
-    // function that is called to load more bytes into the buffer.
-    using loader = std::function<size_t(std::byte *, size_t)>;
-
-    encoder(const config &config);
-
-    std::optional<token> encode(loader ld, bool &end);
+    encoder();
+    std::pair<std::byte *, size_t &> for_loading();
+    void                             reset();
+    const std::vector<token>        &encode();
 };
