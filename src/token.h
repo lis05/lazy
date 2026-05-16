@@ -4,8 +4,8 @@
 #include <variant>
 
 struct match {
-    size_t distance;
-    size_t length;
+    uint32_t distance;
+    uint32_t length;
 };
 
 using token = std::variant<match, std::byte>;

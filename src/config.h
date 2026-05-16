@@ -1,27 +1,32 @@
 #pragma once
 
-#include <cstddef>
 #include <cassert>
+#include <cstddef>
+#include <iostream>
 
 class config {
 public:
-    size_t window_size;  // must be equal to the sum of history and future
+    size_t window_size;
     size_t history_size;
-    size_t future_size;
+    size_t prefix_size;
 
-    size_t prefix_size;  // size of the prefixes that will be hashed. Must be at
-                         // least zero. Must also be at most future_size + 1.
-
-    config(size_t _history_size, size_t _future_size, size_t _prefix_size)
-        : window_size(_history_size + _future_size),
-          history_size(history_size),
-          future_size(_future_size),
+    config(size_t _window_size, size_t _history_size, size_t _prefix_size)
+        : window_size(_window_size),
+          history_size(_history_size),
           prefix_size(_prefix_size) {
-        assert(window_size > 0);
-        assert(history_size > 0);
-        assert(future_size > 0);
-        assert(prefix_size > 0);
-        assert(prefix_size <= future_size + 1);
+        if (window_size == 0) {
+            std::cerr << "Window size must not be zero." << std::endl;
+            std::exit(-1);
+        }
+        if (history_size == 0) {
+            std::cerr << "History buffer size must not be zero." << std::endl;
+            std::exit(-1);
+        }
+        if (prefix_size == 0) {
+            std::cerr << "Maximal size of a prefix to hash must not be zero."
+                      << std::endl;
+            std::exit(-1);
+        }
     }
 };
 
