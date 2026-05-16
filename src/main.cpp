@@ -25,11 +25,14 @@ int main(int argc, char **argv) {
     std::string output_file = "";
     app.add_option("-o", output_file, "Output file");
 
-    std::string format_opt = "tokens";
+    std::string format_opt = "binary";
     app.add_option("-f", format_opt, "Output format (if encoding)");
 
     bool measure_time = false;
     app.add_flag("-m", measure_time, "Measure execution time");
+
+    bool print_total_tokens = false;
+    app.add_flag("-t", print_total_tokens, "Print total tokens produced (if encoding)");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -44,12 +47,14 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    auto format = formats::format::get_readable();
+    auto format = formats::format::get_for_option(format_opt);
 
     auto start_time = std::chrono::high_resolution_clock::now();
     if (run_encoder) {
         encoder encoder;
         auto [data_buffer, bytes_loaded] = encoder.for_loading();
+
+        size_t total = 0;
 
         while (true) {
             encoder.reset();
@@ -59,9 +64,14 @@ int main(int argc, char **argv) {
                 break;
             }
             auto tokens = encoder.encode();
+            total += tokens.size();
 
             format.write_format_mark(out);
             format.write_block(tokens, out);
+        }
+
+        if (print_total_tokens) {
+            std::cout << "Total tokens: " << total << "\n";
         }
     } else if (run_decoder) {
         decoder decoder;
