@@ -14,6 +14,7 @@ class decoder {
 public:
     decoder();
 
+    void reset();
     std::pair<const std::byte *, size_t> get_bytes() const noexcept;
     void                           decode(const std::vector<token> &tokens);
 };

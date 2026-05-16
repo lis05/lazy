@@ -4,8 +4,8 @@
 
 #include "CLI11.h"
 #include "config.h"
-#include "encoder.h"
 #include "decoder.h"
+#include "encoder.h"
 #include "formats.h"
 #include "token.h"
 
@@ -13,7 +13,7 @@ int main(int argc, char **argv) {
     CLI::App app{"Simple LZ77 encoder."};
     argv = app.ensure_utf8(argv);
 
-    bool run_encoder = true;
+    bool run_encoder = false;
     app.add_flag("-e", run_encoder, "Run encoder");
 
     bool run_decoder = false;
@@ -65,6 +65,23 @@ int main(int argc, char **argv) {
         }
     } else if (run_decoder) {
         decoder decoder;
+
+        while (true) {
+
+            uint8_t mark;
+            in >> mark;
+            format = formats::format::get_for_mark(mark);
+            auto tokens = format.read_block(in);
+
+            if (tokens.empty()) {
+                break;
+            }
+
+            decoder.reset();
+            decoder.decode(tokens);
+            auto [data, len] = decoder.get_bytes();
+            out.write(reinterpret_cast<const char *>(data), len);
+        }
     }
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed_time = end_time - start_time;

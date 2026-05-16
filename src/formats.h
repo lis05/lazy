@@ -6,6 +6,7 @@
 #include <vector>
 #include <fstream>
 #include <variant>
+#include <stdexcept>
 
 #include "token.h"
 
@@ -23,7 +24,7 @@ namespace readable {
 struct header {
     size_t       n_items;
     friend auto& operator<<(auto& out, const header& h) {
-        return out << h.n_items;
+        return out << h.n_items << " ";
     }
     friend auto& operator>>(auto& in, header& h) {
         return in >> h.n_items;
@@ -51,14 +52,16 @@ static void write_block(const std::vector<token>& tokens, std::ofstream& out) {
 static std::vector<token> read_block(std::ifstream& in) {
     std::vector<token> res;
     header             h;
-    in >> h;
+    if (!(in >> h)) {
+        return {};
+    }
 
     for (size_t i = 0; i < h.n_items; i++) {
         char c;
         in >> c;
 
         if (c == 'B') {
-            uint8_t b;
+            int b;
             in >> b;
             res.push_back(std::byte{b});
         } else if (c == 'M') {
@@ -80,6 +83,13 @@ struct format {
     static format get_readable() {
         return format{readable::write_format_mark, readable::write_block,
                       readable::read_block};
+    }
+
+    static format get_for_mark(uint8_t mark) {
+        if (mark == READABLE) {
+            return get_readable();
+        }
+        throw std::runtime_error("Unknown format mark");
     }
 };
 
