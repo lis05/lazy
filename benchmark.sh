@@ -21,9 +21,9 @@ fi
 TEMP_ENC="/tmp/encoded"
 TEMP_DEC="/tmp/decoded"
 
-# Remove CR from header
+# Remove CR from header and replace time columns with speed columns (MB/s)
 HEADER=$(head -n 1 "$PARAMS_FILE" | tr -d '\r')
-echo "${HEADER},enc_time,dec_time,enc_size,ratio"
+echo "${HEADER},enc_speed_mbps,dec_speed_mbps,enc_size,ratio"
 
 TOTAL_ROWS=$(tail -n +2 "$PARAMS_FILE" | wc -l)
 CURRENT_ROW=0
@@ -71,7 +71,16 @@ while IFS=, read -r input_file format block_size window_size future_limit prefix
 
     DEC_TIME=$(echo "$DEC_OUT" | grep "TIME:" | awk '{print $2}')
     ENC_SIZE=$(wc -c <"$TEMP_ENC")
-    RATIO=$(awk "BEGIN {printf \"%.2f%%\", ($ENC_SIZE / $ORIG_SIZE) * 100}")
+
+    # Calculate Megabytes per second (MB/s) and compression ratio
+    SPEED_STATS=$(awk -v orig="$ORIG_SIZE" -v enc_sz="$ENC_SIZE" -v t_enc="$ENC_TIME" -v t_dec="$DEC_TIME" 'BEGIN {
+        enc_mbps = (t_enc > 0) ? (orig / 1048576) / t_enc : 0;
+        dec_mbps = (t_dec > 0) ? (orig / 1048576) / t_dec : 0;
+        ratio = (orig > 0) ? (enc_sz / orig) * 100 : 0;
+        printf "%.2f,%.2f,%.2f%%", enc_mbps, dec_mbps, ratio
+    }')
+
+    IFS=, read -r ENC_SPEED DEC_SPEED RATIO <<<"$SPEED_STATS"
 
     if ! cmp -s "$input_file" "$TEMP_DEC"; then
         echo -e "\nError: Verification failed!" >&2
@@ -93,7 +102,7 @@ while IFS=, read -r input_file format block_size window_size future_limit prefix
         exit 1
     fi
 
-    echo "${input_file},${format},${block_size},${window_size},${future_limit},${prefix_size},${len3_dist_bits},${len4_dist_bits},${len5_dist_bits},${len6_dist_bits},${len7_dist_bits},${lenx_dist_bits},${lenx_len_bits},${ENC_TIME},${DEC_TIME},${ENC_SIZE},${RATIO}"
+    echo "${input_file},${format},${block_size},${window_size},${future_limit},${prefix_size},${len3_dist_bits},${len4_dist_bits},${len5_dist_bits},${len6_dist_bits},${len7_dist_bits},${lenx_dist_bits},${lenx_len_bits},${ENC_SPEED},${DEC_SPEED},${ENC_SIZE},${RATIO}"
 
 done < <(tail -n +2 "$PARAMS_FILE" | tr -d '\r')
 
