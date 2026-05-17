@@ -21,9 +21,14 @@ fi
 TEMP_ENC="/tmp/encoded"
 TEMP_DEC="/tmp/decoded"
 
+# Create output directory and file
+mkdir -p benchmark-results
+OUTPUT_FILE="benchmark-results/results.csv"
+
 # Remove CR from header and replace time columns with speed columns (MB/s)
 HEADER=$(head -n 1 "$PARAMS_FILE" | tr -d '\r')
-echo "${HEADER},enc_speed_mbps,dec_speed_mbps,enc_size,ratio"
+echo "${HEADER},enc_speed_mbps,dec_speed_mbps,enc_size,ratio" > "$OUTPUT_FILE"
+echo "Writing results to $OUTPUT_FILE" >&2
 
 TOTAL_ROWS=$(tail -n +2 "$PARAMS_FILE" | wc -l)
 CURRENT_ROW=0
@@ -41,35 +46,47 @@ while IFS=, read -r input_file format block_size window_size future_limit max_ma
 
     ORIG_SIZE=$(wc -c <"$input_file")
 
-    ENC_OUT=$($BINARY -e -i "$input_file" -o "$TEMP_ENC" -f "$format" -m \
-        --block-size "$block_size" \
-        --window-size "$window_size" \
-        --future-limit "$future_limit" \
-        --max-matches "$max_matches" \
-        --len3-dist-bits "$len3_dist_bits" \
-        --len4-dist-bits "$len4_dist_bits" \
-        --len5-dist-bits "$len5_dist_bits" \
-        --len6-dist-bits "$len6_dist_bits" \
-        --len7-dist-bits "$len7_dist_bits" \
-        --lenx-dist-bits "$lenx_dist_bits" \
-        --lenx-len-bits "$lenx_len_bits" 2>&1)
+    # Run encoding 3 times and collect times
+    ENC_TIMES=()
+    for i in {1..3}; do
+        ENC_OUT=$($BINARY -e -i "$input_file" -o "$TEMP_ENC" -f "$format" -m \
+            --block-size "$block_size" \
+            --window-size "$window_size" \
+            --future-limit "$future_limit" \
+            --max-matches "$max_matches" \
+            --len3-dist-bits "$len3_dist_bits" \
+            --len4-dist-bits "$len4_dist_bits" \
+            --len5-dist-bits "$len5_dist_bits" \
+            --len6-dist-bits "$len6_dist_bits" \
+            --len7-dist-bits "$len7_dist_bits" \
+            --lenx-dist-bits "$lenx_dist_bits" \
+            --lenx-len-bits "$lenx_len_bits" 2>&1)
+        TIME=$(echo "$ENC_OUT" | grep "TIME:" | awk '{print $2}')
+        ENC_TIMES+=("$TIME")
+    done
 
-    ENC_TIME=$(echo "$ENC_OUT" | grep "TIME:" | awk '{print $2}')
+    # Run decoding 3 times and collect times
+    DEC_TIMES=()
+    for i in {1..3}; do
+        DEC_OUT=$($BINARY -d -i "$TEMP_ENC" -o "$TEMP_DEC" -m \
+            --block-size "$block_size" \
+            --window-size "$window_size" \
+            --future-limit "$future_limit" \
+            --max-matches "$max_matches" \
+            --len3-dist-bits "$len3_dist_bits" \
+            --len4-dist-bits "$len4_dist_bits" \
+            --len5-dist-bits "$len5_dist_bits" \
+            --len6-dist-bits "$len6_dist_bits" \
+            --len7-dist-bits "$len7_dist_bits" \
+            --lenx-dist-bits "$lenx_dist_bits" \
+            --lenx-len-bits "$lenx_len_bits" 2>&1)
+        TIME=$(echo "$DEC_OUT" | grep "TIME:" | awk '{print $2}')
+        DEC_TIMES+=("$TIME")
+    done
 
-    DEC_OUT=$($BINARY -d -i "$TEMP_ENC" -o "$TEMP_DEC" -m \
-        --block-size "$block_size" \
-        --window-size "$window_size" \
-        --future-limit "$future_limit" \
-        --max-matches "$max_matches" \
-        --len3-dist-bits "$len3_dist_bits" \
-        --len4-dist-bits "$len4_dist_bits" \
-        --len5-dist-bits "$len5_dist_bits" \
-        --len6-dist-bits "$len6_dist_bits" \
-        --len7-dist-bits "$len7_dist_bits" \
-        --lenx-dist-bits "$lenx_dist_bits" \
-        --lenx-len-bits "$lenx_len_bits" 2>&1)
-
-    DEC_TIME=$(echo "$DEC_OUT" | grep "TIME:" | awk '{print $2}')
+    # Compute average times
+    ENC_TIME=$(awk -v t1="${ENC_TIMES[0]}" -v t2="${ENC_TIMES[1]}" -v t3="${ENC_TIMES[2]}" 'BEGIN {print (t1 + t2 + t3) / 3}')
+    DEC_TIME=$(awk -v t1="${DEC_TIMES[0]}" -v t2="${DEC_TIMES[1]}" -v t3="${DEC_TIMES[2]}" 'BEGIN {print (t1 + t2 + t3) / 3}')
     ENC_SIZE=$(wc -c <"$TEMP_ENC")
 
     # Calculate Megabytes per second (MB/s) and compression ratio
@@ -102,9 +119,10 @@ while IFS=, read -r input_file format block_size window_size future_limit max_ma
         exit 1
     fi
 
-    echo "${input_file},${format},${block_size},${window_size},${future_limit},${max_matches},${len3_dist_bits},${len4_dist_bits},${len5_dist_bits},${len6_dist_bits},${len7_dist_bits},${lenx_dist_bits},${lenx_len_bits},${ENC_SPEED},${DEC_SPEED},${ENC_SIZE},${RATIO}"
+    echo "${input_file},${format},${block_size},${window_size},${future_limit},${max_matches},${len3_dist_bits},${len4_dist_bits},${len5_dist_bits},${len6_dist_bits},${len7_dist_bits},${lenx_dist_bits},${lenx_len_bits},${ENC_SPEED},${DEC_SPEED},${ENC_SIZE},${RATIO}" >> "$OUTPUT_FILE"
 
 done < <(tail -n +2 "$PARAMS_FILE" | tr -d '\r')
 
 echo -e "\nFinished processing all benchmarks." >&2
+echo "Results saved to: $OUTPUT_FILE" >&2
 rm -f "$TEMP_ENC" "$TEMP_DEC"

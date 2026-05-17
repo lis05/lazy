@@ -23,14 +23,16 @@ HEADER = [
 
 FILE_VAL = "big_files/enwik6"
 FORMAT_VAL = "fse"
-MAX_MATCHES = 3
+# Try a range of max_matches values to explore matching limits
+MAX_MATCHES_LIST = [1, 4, 16, 128, 1024, 999999999]
 
 # Static defaults for unused distribution fields under FSE mode
 DUMMY_VAL = 0
 
 # Define parameter ranges (in bytes)
 BLOCK_SIZES = [16384, 32768, 65536, 131072, 262144, 524288, 1048576]
-WINDOW_SIZES = [2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576]
+WINDOW_SIZES = [2048, 4096, 8192, 16384, 32768,
+                65536, 131072, 262144, 524288, 1048576]
 FUTURE_LIMITS = [3, 4, 8, 16, 32, 64, 128, 256, 258]
 
 with open(OUTPUT_FILE, mode="w", newline="\n") as f:
@@ -45,19 +47,20 @@ with open(OUTPUT_FILE, mode="w", newline="\n") as f:
             for future_limit in FUTURE_LIMITS:
                 if future_limit > window_size:
                     continue
-                row = [
-                    FILE_VAL,
-                    FORMAT_VAL,
-                    block_size,
-                    window_size,
-                    future_limit,
-                    MAX_MATCHES,
-                    DUMMY_VAL,
-                    DUMMY_VAL,
-                    DUMMY_VAL,
-                    DUMMY_VAL,
-                    DUMMY_VAL,
-                    DUMMY_VAL,
-                    DUMMY_VAL,
-                ]
-                writer.writerow(row)
+                for max_matches in MAX_MATCHES_LIST:
+                    row = [
+                        FILE_VAL,
+                        FORMAT_VAL,
+                        block_size,
+                        window_size,
+                        future_limit,
+                        max_matches,
+                        DUMMY_VAL,
+                        DUMMY_VAL,
+                        DUMMY_VAL,
+                        DUMMY_VAL,
+                        DUMMY_VAL,
+                        DUMMY_VAL,
+                        DUMMY_VAL,
+                    ]
+                    writer.writerow(row)

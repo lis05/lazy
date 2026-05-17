@@ -26,7 +26,8 @@ FORMAT_VAL = "binary"
 BLOCK_SIZE = 1048576
 WINDOW_SIZE = 32768
 FUTURE_LIMIT = 18
-MAX_MATCHES = 3
+# Try a range of max_matches values to explore matching limits
+MAX_MATCHES_LIST = [1, 4, 16, 128, 1024, 999999999]
 LENX_DIST_BITS = 15
 LENX_LEN_BITS = 4
 
@@ -50,19 +51,20 @@ with open(OUTPUT_FILE, mode="w", newline="\n") as f:
                         if b7 < b6:
                             continue
 
-                        row = [
-                            FILE_VAL,
-                            FORMAT_VAL,
-                            BLOCK_SIZE,
-                            WINDOW_SIZE,
-                            FUTURE_LIMIT,
-                            MAX_MATCHES,
-                            b3,
-                            b4,
-                            b5,
-                            b6,
-                            b7,
-                            LENX_DIST_BITS,
-                            LENX_LEN_BITS,
-                        ]
-                        writer.writerow(row)
+                        for max_matches in MAX_MATCHES_LIST:
+                            row = [
+                                FILE_VAL,
+                                FORMAT_VAL,
+                                BLOCK_SIZE,
+                                WINDOW_SIZE,
+                                FUTURE_LIMIT,
+                                max_matches,
+                                b3,
+                                b4,
+                                b5,
+                                b6,
+                                b7,
+                                LENX_DIST_BITS,
+                                LENX_LEN_BITS,
+                            ]
+                            writer.writerow(row)

@@ -25,7 +25,8 @@ HEADER = [
 
 FILE_VAL = "big_files/enwik6"
 FORMAT_VAL = "binary"
-MAX_MATCHES = 3
+# Try a range of max_matches values to explore matching limits
+MAX_MATCHES_LIST = [1, 4, 16, 128, 1024, 999999999]
 
 BLOCK_SIZES = [32768, 131072, 524288, 1048576]
 WINDOW_SIZES = [4096, 16384, 32768, 131072, 262144]
@@ -54,19 +55,20 @@ with open(OUTPUT_FILE, mode="w", newline="\n") as f:
                 for combo in itertools.combinations_with_replacement(BIT_OPTIONS, 5):
                     b3, b4, b5, b6, b7 = combo
 
-                    row = [
-                        FILE_VAL,
-                        FORMAT_VAL,
-                        block_size,
-                        window_size,
-                        future_limit,
-                        MAX_MATCHES,
-                        b3,
-                        b4,
-                        b5,
-                        b6,
-                        b7,
-                        lenx_dist_bits,
-                        lenx_len_bits,
-                    ]
-                    writer.writerow(row)
+                    for max_matches in MAX_MATCHES_LIST:
+                        row = [
+                            FILE_VAL,
+                            FORMAT_VAL,
+                            block_size,
+                            window_size,
+                            future_limit,
+                            max_matches,
+                            b3,
+                            b4,
+                            b5,
+                            b6,
+                            b7,
+                            lenx_dist_bits,
+                            lenx_len_bits,
+                        ]
+                        writer.writerow(row)

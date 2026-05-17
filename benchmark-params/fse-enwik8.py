@@ -23,7 +23,8 @@ HEADER = [
 
 FILE_VAL = "big_files/enwik8"
 FORMAT_VAL = "fse"
-MAX_MATCHES = 3
+# Try a range of max_matches values to explore matching limits
+MAX_MATCHES_LIST = [1, 4, 16, 128, 1024, 999999999]
 
 # Static defaults for unused distribution fields under FSE mode
 DUMMY_VAL = 0
@@ -45,19 +46,20 @@ with open(OUTPUT_FILE, mode="w", newline="\n") as f:
             for future_limit in FUTURE_LIMITS:
                 if future_limit > window_size:
                     continue
-                row = [
-                    FILE_VAL,
-                    FORMAT_VAL,
-                    block_size,
-                    window_size,
-                    future_limit,
-                    MAX_MATCHES,
-                    DUMMY_VAL,
-                    DUMMY_VAL,
-                    DUMMY_VAL,
-                    DUMMY_VAL,
-                    DUMMY_VAL,
-                    DUMMY_VAL,
-                    DUMMY_VAL,
-                ]
-                writer.writerow(row)
+                for max_matches in MAX_MATCHES_LIST:
+                    row = [
+                        FILE_VAL,
+                        FORMAT_VAL,
+                        block_size,
+                        window_size,
+                        future_limit,
+                        max_matches,
+                        DUMMY_VAL,
+                        DUMMY_VAL,
+                        DUMMY_VAL,
+                        DUMMY_VAL,
+                        DUMMY_VAL,
+                        DUMMY_VAL,
+                        DUMMY_VAL,
+                    ]
+                    writer.writerow(row)
