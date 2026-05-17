@@ -29,7 +29,7 @@ TOTAL_ROWS=$(tail -n +2 "$PARAMS_FILE" | wc -l)
 CURRENT_ROW=0
 
 # Process substitution prevents subshell. tr removes CRLF issues.
-while IFS=, read -r input_file format block_size window_size future_limit prefix_size len3_dist_bits len4_dist_bits len5_dist_bits len6_dist_bits len7_dist_bits lenx_dist_bits lenx_len_bits; do
+while IFS=, read -r input_file format block_size window_size future_limit max_matches len3_dist_bits len4_dist_bits len5_dist_bits len6_dist_bits len7_dist_bits lenx_dist_bits lenx_len_bits; do
 
     ((CURRENT_ROW++))
     echo -ne "Progress: ${CURRENT_ROW}/${TOTAL_ROWS} ($((CURRENT_ROW * 100 / TOTAL_ROWS))%)\r" >&2
@@ -45,7 +45,7 @@ while IFS=, read -r input_file format block_size window_size future_limit prefix
         --block-size "$block_size" \
         --window-size "$window_size" \
         --future-limit "$future_limit" \
-        --prefix-size "$prefix_size" \
+        --max-matches "$max_matches" \
         --len3-dist-bits "$len3_dist_bits" \
         --len4-dist-bits "$len4_dist_bits" \
         --len5-dist-bits "$len5_dist_bits" \
@@ -60,7 +60,7 @@ while IFS=, read -r input_file format block_size window_size future_limit prefix
         --block-size "$block_size" \
         --window-size "$window_size" \
         --future-limit "$future_limit" \
-        --prefix-size "$prefix_size" \
+        --max-matches "$max_matches" \
         --len3-dist-bits "$len3_dist_bits" \
         --len4-dist-bits "$len4_dist_bits" \
         --len5-dist-bits "$len5_dist_bits" \
@@ -90,7 +90,7 @@ while IFS=, read -r input_file format block_size window_size future_limit prefix
         echo "  block_size:      $block_size" >&2
         echo "  window_size:     $window_size" >&2
         echo "  future_limit:    $future_limit" >&2
-        echo "  prefix_size:     $prefix_size" >&2
+        echo "  max_matches:     $max_matches" >&2
         echo "  len3_dist_bits:  $len3_dist_bits" >&2
         echo "  len4_dist_bits:  $len4_dist_bits" >&2
         echo "  len5_dist_bits:  $len5_dist_bits" >&2
@@ -102,7 +102,7 @@ while IFS=, read -r input_file format block_size window_size future_limit prefix
         exit 1
     fi
 
-    echo "${input_file},${format},${block_size},${window_size},${future_limit},${prefix_size},${len3_dist_bits},${len4_dist_bits},${len5_dist_bits},${len6_dist_bits},${len7_dist_bits},${lenx_dist_bits},${lenx_len_bits},${ENC_SPEED},${DEC_SPEED},${ENC_SIZE},${RATIO}"
+    echo "${input_file},${format},${block_size},${window_size},${future_limit},${max_matches},${len3_dist_bits},${len4_dist_bits},${len5_dist_bits},${len6_dist_bits},${len7_dist_bits},${lenx_dist_bits},${lenx_len_bits},${ENC_SPEED},${DEC_SPEED},${ENC_SIZE},${RATIO}"
 
 done < <(tail -n +2 "$PARAMS_FILE" | tr -d '\r')
 

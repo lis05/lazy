@@ -12,6 +12,8 @@ public:
     inline static size_t prefix_size = 3;
     inline static size_t total_hashes = 1 << (8 * prefix_size);
 
+    inline static size_t max_matches = 1 << 29;
+
     inline static size_t binaryfmt_len3_distance_bits = 15;
     inline static size_t binaryfmt_len4_distance_bits = 15;
     inline static size_t binaryfmt_len5_distance_bits = 15;
@@ -20,14 +22,14 @@ public:
     inline static size_t binaryfmt_lenx_distance_bits = 15;
     inline static size_t binaryfmt_lenx_length_bits = 4;
 
-    static void load(size_t b_size, size_t w_size, size_t f_limit, size_t p_size,
+    static void load(size_t b_size, size_t w_size, size_t f_limit, size_t max_m,
                      size_t l3_dist, size_t l4_dist, size_t l5_dist, size_t l6_dist,
                      size_t l7_dist, size_t lx_dist, size_t lx_len) {
         block_size = b_size;
         window_size = w_size;
         future_limit = f_limit;
-        prefix_size = p_size;
         total_hashes = 1 << (8 * prefix_size);
+        max_matches = max_m;
         binaryfmt_len3_distance_bits = l3_dist;
         binaryfmt_len4_distance_bits = l4_dist;
         binaryfmt_len5_distance_bits = l5_dist;

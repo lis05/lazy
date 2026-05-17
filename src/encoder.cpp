@@ -16,11 +16,6 @@ encoder::encoder()
       prev(config::block_size) {
 }
 
-static inline uint32_t match_str(std::byte *left, std::byte *right,
-                                 uint32_t right_limit) {
-    return strmatch::match(left, right, right_limit);
-}
-
 std::pair<std::byte *, size_t &> encoder::for_loading() {
     return {data.data(), bytes_loaded};
 }
@@ -45,22 +40,24 @@ const std::vector<token> &encoder::encode() {
 
     calculate_hashes();
 
-#if 0
-    for (size_t i = 0; i < bytes_loaded; i++) {
-        std::cerr << i << " " << prev[i] << "\n";
-    }
-#endif
-
     for (uint32_t i = 0; i < bytes_loaded;) {
         uint32_t best_match_len = 1;
         uint32_t best_match_pos = NONE;
 
         uint32_t future_limit = std::min(bytes_loaded - i, config::future_limit);
+        auto     matchf = strmatch::get_match(future_limit);
 
+        size_t count = config::max_matches;
         for (uint32_t pos = prev[i]; pos != NONE && pos + config::window_size >= i;
              pos = prev[pos]) {
-            uint32_t match_len =
-                match_str(data.data() + pos, data.data() + i, future_limit);
+            uint32_t match_len = matchf(data.data() + pos, data.data() + i);
+            if (match_len > 1) {
+                if (count-- == 0) {
+                    best_match_len = match_len;
+                    best_match_pos = pos;
+                    break;
+                }
+            }
 
             if (match_len > best_match_len) {
                 best_match_len = match_len;

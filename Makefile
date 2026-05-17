@@ -2,8 +2,8 @@ CXX=g++
 CC=gcc
 LD=g++
 
-CXXFLAGS=-O3 -std=c++23 -MMD -MP -Ithird_party/finitestateentropy/lib
-CFLAGS=-O3 -std=gnu11 -Ithird_party/finitestateentropy/lib
+CXXFLAGS=-O3 -ftree-vectorize -march=native -std=c++23 -MMD -MP -Ithird_party/finitestateentropy/lib
+CFLAGS=-O3 -ftree-vectorize -march=native -std=gnu11 -Ithird_party/finitestateentropy/lib
 LDFLAGS=
 LDLIBS=
 

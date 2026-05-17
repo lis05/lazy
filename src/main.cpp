@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
     size_t block_size = config::block_size;
     size_t window_size = config::window_size;
     size_t future_limit = config::future_limit;
-    size_t prefix_size = config::prefix_size;
+    size_t max_matches = config::max_matches;
     size_t len3_dist_bits = config::binaryfmt_len3_distance_bits;
     size_t len4_dist_bits = config::binaryfmt_len4_distance_bits;
     size_t len5_dist_bits = config::binaryfmt_len5_distance_bits;
@@ -53,8 +53,8 @@ int main(int argc, char **argv) {
                    "LZ77 dictionary window size in bytes");
     app.add_option("--future-limit", future_limit,
                    "LZ77 lookahead buffer limit size");
-    app.add_option("--prefix-size", prefix_size,
-                   "Prefix matching sequence token size");
+    app.add_option("--max-matches", max_matches,
+                   "LZ77 max matches before acceptation");
     app.add_option("--len3-dist-bits", len3_dist_bits,
                    "Bits used for distance encoding in 3-byte matches");
     app.add_option("--len4-dist-bits", len4_dist_bits,
@@ -83,7 +83,7 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    config::load(block_size, window_size, future_limit, prefix_size, len3_dist_bits,
+    config::load(block_size, window_size, future_limit, max_matches, len3_dist_bits,
                  len4_dist_bits, len5_dist_bits, len6_dist_bits, len7_dist_bits,
                  lenx_dist_bits, lenx_len_bits);
 

@@ -11,7 +11,7 @@ HEADER = [
     "block_size",
     "window_size",
     "future_limit",
-    "prefix_size",
+    "max_matches",
     "len3_dist_bits",
     "len4_dist_bits",
     "len5_dist_bits",
@@ -26,7 +26,7 @@ FORMAT_VAL = "binary"
 BLOCK_SIZE = 1048576
 WINDOW_SIZE = 32768
 FUTURE_LIMIT = 18
-PREFIX_SIZE = 3
+MAX_MATCHES = 3
 LENX_DIST_BITS = 15
 LENX_LEN_BITS = 4
 
@@ -56,7 +56,7 @@ with open(OUTPUT_FILE, mode="w", newline="\n") as f:
                             BLOCK_SIZE,
                             WINDOW_SIZE,
                             FUTURE_LIMIT,
-                            PREFIX_SIZE,
+                            MAX_MATCHES,
                             b3,
                             b4,
                             b5,

@@ -11,7 +11,7 @@ HEADER = [
     "block_size",
     "window_size",
     "future_limit",
-    "prefix_size",
+    "max_matches",
     "len3_dist_bits",
     "len4_dist_bits",
     "len5_dist_bits",
@@ -23,7 +23,7 @@ HEADER = [
 
 FILE_VAL = "big_files/enwik6"
 FORMAT_VAL = "fse"
-PREFIX_SIZE = 3
+MAX_MATCHES = 3
 
 # Static defaults for unused distribution fields under FSE mode
 DUMMY_VAL = 0
@@ -51,7 +51,7 @@ with open(OUTPUT_FILE, mode="w", newline="\n") as f:
                     block_size,
                     window_size,
                     future_limit,
-                    PREFIX_SIZE,
+                    MAX_MATCHES,
                     DUMMY_VAL,
                     DUMMY_VAL,
                     DUMMY_VAL,
