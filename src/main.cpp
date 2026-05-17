@@ -32,7 +32,43 @@ int main(int argc, char **argv) {
     app.add_flag("-m", measure_time, "Measure execution time");
 
     bool print_total_tokens = false;
-    app.add_flag("-t", print_total_tokens, "Print total tokens produced (if encoding)");
+    app.add_flag("-t", print_total_tokens,
+                 "Print total tokens produced (if encoding)");
+
+    size_t block_size = config::block_size;
+    size_t window_size = config::window_size;
+    size_t future_limit = config::future_limit;
+    size_t prefix_size = config::prefix_size;
+    size_t len3_dist_bits = config::binaryfmt_len3_distance_bits;
+    size_t len4_dist_bits = config::binaryfmt_len4_distance_bits;
+    size_t len5_dist_bits = config::binaryfmt_len5_distance_bits;
+    size_t len6_dist_bits = config::binaryfmt_len6_distance_bits;
+    size_t len7_dist_bits = config::binaryfmt_len7_distance_bits;
+    size_t lenx_dist_bits = config::binaryfmt_lenx_distance_bits;
+    size_t lenx_len_bits = config::binaryfmt_lenx_length_bits;
+
+    app.add_option("--block-size", block_size,
+                   "LZ77 processing block size in bytes");
+    app.add_option("--window-size", window_size,
+                   "LZ77 dictionary window size in bytes");
+    app.add_option("--future-limit", future_limit,
+                   "LZ77 lookahead buffer limit size");
+    app.add_option("--prefix-size", prefix_size,
+                   "Prefix matching sequence token size");
+    app.add_option("--len3-dist-bits", len3_dist_bits,
+                   "Bits used for distance encoding in 3-byte matches");
+    app.add_option("--len4-dist-bits", len4_dist_bits,
+                   "Bits used for distance encoding in 4-byte matches");
+    app.add_option("--len5-dist-bits", len5_dist_bits,
+                   "Bits used for distance encoding in 5-byte matches");
+    app.add_option("--len6-dist-bits", len6_dist_bits,
+                   "Bits used for distance encoding in 6-byte matches");
+    app.add_option("--len7-dist-bits", len7_dist_bits,
+                   "Bits used for distance encoding in 7-byte matches");
+    app.add_option("--lenx-dist-bits", lenx_dist_bits,
+                   "Bits used for distance encoding in length-X matches");
+    app.add_option("--lenx-len-bits", lenx_len_bits,
+                   "Bits used for length payload encoding in length-X matches");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -46,6 +82,10 @@ int main(int argc, char **argv) {
         std::cerr << "Failed to write to " << input_file << std::endl;
         return -1;
     }
+
+    config::load(block_size, window_size, future_limit, prefix_size, len3_dist_bits,
+                 len4_dist_bits, len5_dist_bits, len6_dist_bits, len7_dist_bits,
+                 lenx_dist_bits, lenx_len_bits);
 
     auto format = formats::format::get_for_option(format_opt);
 
@@ -77,9 +117,10 @@ int main(int argc, char **argv) {
         decoder decoder;
 
         while (true) {
-
-            uint8_t mark;
-            in >> mark;
+            unsigned char mark;
+            if (!(in >> mark)) {
+                break;
+            }
             format = formats::format::get_for_mark(mark);
             auto tokens = format.read_block(in);
 
