@@ -2,4 +2,9 @@ obj
 build
 perf.data
 perf.data.old
+report.txt
+assembly-report.txt
+assembly_report.txt
+benchmark-results
+
 

@@ -40,24 +40,21 @@ const std::vector<token> &encoder::encode() {
 
     calculate_hashes();
 
+    auto data_buf = data.data();
+    auto prev_buf = prev.data();
+
     for (uint32_t i = 0; i < bytes_loaded;) {
         uint32_t best_match_len = 1;
         uint32_t best_match_pos = NONE;
 
         uint32_t future_limit = std::min(bytes_loaded - i, config::future_limit);
-        auto     matchf = strmatch::get_match(future_limit);
 
         size_t count = config::max_matches;
-        for (uint32_t pos = prev[i]; pos != NONE && pos + config::window_size >= i;
-             pos = prev[pos]) {
-            uint32_t match_len = matchf(data.data() + pos, data.data() + i);
-            if (match_len > 1) {
-                if (count-- == 0) {
-                    best_match_len = match_len;
-                    best_match_pos = pos;
-                    break;
-                }
-            }
+        for (uint32_t pos = prev[i];
+             pos != NONE && pos + config::window_size >= i && --count > 0;
+             pos = prev_buf[pos]) {
+            uint32_t match_len = strmatch::match_simd_loop(
+                future_limit, data_buf + pos, data_buf + i);
 
             if (match_len > best_match_len) {
                 best_match_len = match_len;
