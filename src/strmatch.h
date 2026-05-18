@@ -3,6 +3,7 @@
 #include <immintrin.h>
 
 #include <array>
+#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -19,7 +20,7 @@ static __attribute__((always_inline)) inline uint32_t match_simd_loop(
         memcpy(&l, left + i, sizeof(uint64_t));
         memcpy(&r, right + i, sizeof(uint64_t));
         if (l != r) {
-            return i + __builtin_ctzll(l ^ r) / 8;
+            return i + std::countr_zero(l ^ r) / 8;
         }
         i += 8;
     }
@@ -32,7 +33,7 @@ static __attribute__((always_inline)) inline uint32_t match_simd_loop(
 
         auto mask = _mm512_cmpeq_epi8_mask(l, r);
         if (mask != ~0x0ULL) {
-            return i + __builtin_ctzll(~mask);
+            return i + std::countr_zero(~mask);
         }
     }
 #endif
@@ -46,11 +47,11 @@ static __attribute__((always_inline)) inline uint32_t match_simd_loop(
         __m512i  xor_res = _mm512_xor_si512(l, r);
         uint32_t mask = _mm512_test_epi64_mask(xor_res, xor_res);
         if (mask != 0) {
-            int      qw_idx = __builtin_ctz(mask);
+            int      qw_idx = std::countr_zero(mask);
             uint64_t l_qw, r_qw;
             memcpy(&l_qw, left + i + qw_idx * 8, sizeof(uint64_t));
             memcpy(&r_qw, right + i + qw_idx * 8, sizeof(uint64_t));
-            return i + qw_idx * 8 + __builtin_ctzll(l_qw ^ r_qw) / 8;
+            return i + qw_idx * 8 + std::countr_zero(l_qw ^ r_qw) / 8;
         }
     }
 #endif
@@ -63,7 +64,7 @@ static __attribute__((always_inline)) inline uint32_t match_simd_loop(
 
         __mmask32 mask = _mm256_cmpeq_epi8_mask(l, r);
         if (mask != 0xFFFFFFFF) {
-            return i + __builtin_ctz(~mask);
+            return i + std::countr_zero(~mask);
         }
     }
 #endif
@@ -77,7 +78,7 @@ static __attribute__((always_inline)) inline uint32_t match_simd_loop(
         __m256i  cmp = _mm256_cmpeq_epi8(l, r);
         uint32_t mask = _mm256_movemask_epi8(cmp);
         if (mask != 0xFFFFFFFF) {
-            return i + __builtin_ctz(~mask);
+            return i + std::countr_zero(~mask);
         }
     }
 #endif
@@ -89,7 +90,7 @@ static __attribute__((always_inline)) inline uint32_t match_simd_loop(
         if (l == r) {
             continue;
         }
-        return i + __builtin_ctzll(l ^ r) / 8;
+        return i + std::countr_zero(l ^ r) / 8;
     }
 
     for (; i < N; i++) {
