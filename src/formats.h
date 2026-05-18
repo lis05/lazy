@@ -12,20 +12,19 @@ extern "C" {
 #include <fse.h>
 }
 
-#include "bitstream.h"
 #include "token.h"
 
 namespace formats {
 
 enum marks : unsigned char {
     READABLE,
-    BINARY,
     FSE
 };
 
 using write_format_mark_fn = void (*)(std::ofstream&);
 using write_block_fn = void (*)(const std::vector<token>& tokens, std::ofstream&);
 using read_block_fn = std::vector<token> (*)(std::ifstream&);
+using verify_config_fn = void (*)();
 
 namespace readable {
 struct header {
@@ -80,154 +79,22 @@ static std::vector<token> read_block(std::ifstream& in) {
 
     return res;
 }
+
+static void verify_config() {
+    if (config::block_size == 0) {
+        throw std::runtime_error("Invalid block size: 0");
+    }
+
+    if (config::window_size == 0) {
+        throw std::runtime_error("Invalid window size: 0");
+    }
+
+    if (config::future_limit == 0) {
+        throw std::runtime_error("Invalid future limit: 0");
+    }
+}
 };  // namespace readable
 
-namespace binary {
-struct header {
-    uint32_t     n_items;
-    friend auto& operator<<(auto& out, const header& h) {
-        return out.write(reinterpret_cast<const char*>(&h.n_items),
-                         sizeof(h.n_items));
-    }
-    friend auto& operator>>(auto& in, header& h) {
-        return in.read(reinterpret_cast<char*>(&h.n_items), sizeof(h.n_items));
-    }
-};
-
-static void write_format_mark(std::ofstream& out) {
-    out << BINARY;
-}
-
-static void write_block(const std::vector<token>& tokens, std::ofstream& out) {
-    out << header{tokens.size()};
-
-    bit_writer writer(out);
-
-    for (auto& t : tokens) {
-        if (std::holds_alternative<std::byte>(t)) {
-            writer.write_bit(0);
-            writer.write(static_cast<unsigned char>(std::get<std::byte>(t)), 8);
-        } else {
-            auto m = std::get<match>(t);
-            if (m.length == 3 &&
-                m.distance < (1 << config::binaryfmt_len3_distance_bits)) {
-                writer.write_bit(1);
-                writer.write_bit(0);
-                writer.write_bit(0);
-                writer.write(m.distance, config::binaryfmt_len3_distance_bits);
-            } else if (m.length == 4 &&
-                       m.distance < (1 << config::binaryfmt_len4_distance_bits)) {
-                writer.write_bit(1);
-                writer.write_bit(0);
-                writer.write_bit(1);
-                writer.write(m.distance, config::binaryfmt_len4_distance_bits);
-            } else if (m.length == 5 &&
-                       m.distance < (1 << config::binaryfmt_len5_distance_bits)) {
-                writer.write_bit(1);
-                writer.write_bit(1);
-                writer.write_bit(0);
-                writer.write_bit(0);
-                writer.write(m.distance, config::binaryfmt_len5_distance_bits);
-            } else if (m.length == 6 &&
-                       m.distance < (1 << config::binaryfmt_len6_distance_bits)) {
-                writer.write_bit(1);
-                writer.write_bit(1);
-                writer.write_bit(0);
-                writer.write_bit(1);
-                writer.write(m.distance, config::binaryfmt_len6_distance_bits);
-            } else if (m.length == 7 &&
-                       m.distance < (1 << config::binaryfmt_len7_distance_bits)) {
-                writer.write_bit(1);
-                writer.write_bit(1);
-                writer.write_bit(1);
-                writer.write_bit(0);
-                writer.write(m.distance, config::binaryfmt_len7_distance_bits);
-            } else {
-                assert(m.length - config::prefix_size <
-                       (1 << config::binaryfmt_lenx_length_bits));
-                assert(m.distance - 1 < (1 << config::binaryfmt_lenx_distance_bits));
-                writer.write_bit(1);
-                writer.write_bit(1);
-                writer.write_bit(1);
-                writer.write_bit(1);
-                writer.write(m.length - config::prefix_size,
-                             config::binaryfmt_lenx_length_bits);
-                writer.write(m.distance - 1, config::binaryfmt_lenx_distance_bits);
-            }
-        }
-    }
-
-    writer.flush();
-}
-
-static std::vector<token> read_block(std::ifstream& in) {
-    header h;
-    in >> h;
-
-    std::vector<token> tokens;
-    tokens.reserve(h.n_items);
-
-    bit_reader reader(in);
-
-    for (uint32_t i = 0; i < h.n_items; ++i) {
-        int b1 = reader.read_bit();
-
-        if (b1 == 0) {
-            tokens.push_back(static_cast<std::byte>(reader.read<unsigned char>(8)));
-        } else {
-            uint32_t length = 0;
-            uint32_t distance = 0;
-
-            int b2 = reader.read_bit();
-            if (b2 == 0) {
-                int b3 = reader.read_bit();
-                if (b3 == 0) {
-                    length = 3;
-                    distance =
-                        reader.read<uint32_t>(config::binaryfmt_len3_distance_bits);
-                } else {
-                    length = 4;
-                    distance =
-                        reader.read<uint32_t>(config::binaryfmt_len4_distance_bits);
-                }
-            } else {
-                int b3 = reader.read_bit();
-                if (b3 == 0) {
-                    int b4 = reader.read_bit();
-                    if (b4 == 0) {
-                        length = 5;
-                        distance = reader.read<uint32_t>(
-                            config::binaryfmt_len5_distance_bits);
-                    } else {
-                        length = 6;
-                        distance = reader.read<uint32_t>(
-                            config::binaryfmt_len6_distance_bits);
-                    }
-                } else {
-                    int b4 = reader.read_bit();
-                    if (b4 == 0) {
-                        length = 7;
-                        distance = reader.read<uint32_t>(
-                            config::binaryfmt_len7_distance_bits);
-                    } else {
-                        length = reader.read<uint32_t>(
-                                     config::binaryfmt_lenx_length_bits) +
-                                 config::prefix_size;
-                        distance = reader.read<uint32_t>(
-                                       config::binaryfmt_lenx_distance_bits) +
-                                   1;
-                    }
-                }
-            }
-            assert(length > 0);
-            assert(distance > 0);
-            tokens.push_back(match{distance, length});
-        }
-    }
-
-    return tokens;
-}
-}  // namespace binary
 namespace fse {
 struct header {
     static constexpr int FSE_NORMAL = 0;
@@ -551,37 +418,51 @@ static std::vector<token> read_block(std::ifstream& in) {
                 d4_idx += 4;
             }
 
-            tokens.push_back(match{.distance = dist, .length = lengths[len_idx++] + 3});
+            tokens.push_back(
+                match{.distance = dist, .length = lengths[len_idx++] + 3});
         }
     }
 
     return tokens;
+}
+static void verify_config() {
+    if (config::block_size == 0) {
+        throw std::runtime_error("Invalid block size: 0");
+    }
+
+    if (config::window_size == 0) {
+        throw std::runtime_error("Invalid window size: 0");
+    }
+
+    if (config::future_limit == 0) {
+        throw std::runtime_error("Invalid future limit: 0");
+    }
+    if (config::future_limit > 258) {
+        throw std::runtime_error(
+            std::format("Invalid future limit: {}. Cannot be greater than 258",
+                        config::future_limit));
+    }
 }
 }  // namespace fse
 struct format {
     write_format_mark_fn write_format_mark;
     write_block_fn       write_block;
     read_block_fn        read_block;
+    verify_config_fn     verify_config;
 
     static format get_readable() {
         return format{readable::write_format_mark, readable::write_block,
-                      readable::read_block};
-    }
-
-    static format get_binary() {
-        return format{binary::write_format_mark, binary::write_block,
-                      binary::read_block};
+                      readable::read_block, readable::verify_config};
     }
 
     static format get_fse() {
-        return format{fse::write_format_mark, fse::write_block, fse::read_block};
+        return format{fse::write_format_mark, fse::write_block, fse::read_block,
+                      fse::verify_config};
     }
 
     static format get_for_mark(uint8_t mark) {
         if (mark == READABLE) {
             return get_readable();
-        } else if (mark == BINARY) {
-            return get_binary();
         } else if (mark == FSE) {
             return get_fse();
         }
@@ -591,8 +472,6 @@ struct format {
     static format get_for_option(const std::string& option) {
         if (option == "readable") {
             return get_readable();
-        } else if (option == "binary") {
-            return get_binary();
         } else if (option == "fse") {
             return get_fse();
         }

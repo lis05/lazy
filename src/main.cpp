@@ -25,7 +25,7 @@ int main(int argc, char **argv) {
     std::string output_file = "";
     app.add_option("-o", output_file, "Output file");
 
-    std::string format_opt = "binary";
+    std::string format_opt = "fse";
     app.add_option("-f", format_opt, "Output format (if encoding)");
 
     bool measure_time = false;
@@ -39,13 +39,6 @@ int main(int argc, char **argv) {
     size_t window_size = config::window_size;
     size_t future_limit = config::future_limit;
     size_t max_matches = config::max_matches;
-    size_t len3_dist_bits = config::binaryfmt_len3_distance_bits;
-    size_t len4_dist_bits = config::binaryfmt_len4_distance_bits;
-    size_t len5_dist_bits = config::binaryfmt_len5_distance_bits;
-    size_t len6_dist_bits = config::binaryfmt_len6_distance_bits;
-    size_t len7_dist_bits = config::binaryfmt_len7_distance_bits;
-    size_t lenx_dist_bits = config::binaryfmt_lenx_distance_bits;
-    size_t lenx_len_bits = config::binaryfmt_lenx_length_bits;
 
     app.add_option("--block-size", block_size,
                    "LZ77 processing block size in bytes");
@@ -55,20 +48,6 @@ int main(int argc, char **argv) {
                    "LZ77 lookahead buffer limit size");
     app.add_option("--max-matches", max_matches,
                    "LZ77 max matches before acceptation");
-    app.add_option("--len3-dist-bits", len3_dist_bits,
-                   "Bits used for distance encoding in 3-byte matches");
-    app.add_option("--len4-dist-bits", len4_dist_bits,
-                   "Bits used for distance encoding in 4-byte matches");
-    app.add_option("--len5-dist-bits", len5_dist_bits,
-                   "Bits used for distance encoding in 5-byte matches");
-    app.add_option("--len6-dist-bits", len6_dist_bits,
-                   "Bits used for distance encoding in 6-byte matches");
-    app.add_option("--len7-dist-bits", len7_dist_bits,
-                   "Bits used for distance encoding in 7-byte matches");
-    app.add_option("--lenx-dist-bits", lenx_dist_bits,
-                   "Bits used for distance encoding in length-X matches");
-    app.add_option("--lenx-len-bits", lenx_len_bits,
-                   "Bits used for length payload encoding in length-X matches");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -83,11 +62,10 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    config::load(block_size, window_size, future_limit, max_matches, len3_dist_bits,
-                 len4_dist_bits, len5_dist_bits, len6_dist_bits, len7_dist_bits,
-                 lenx_dist_bits, lenx_len_bits);
+    config::load(block_size, window_size, future_limit, max_matches);
 
     auto format = formats::format::get_for_option(format_opt);
+    format.verify_config();
 
     auto start_time = std::chrono::high_resolution_clock::now();
     if (run_encoder) {

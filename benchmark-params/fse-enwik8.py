@@ -12,13 +12,6 @@ HEADER = [
     "window_size",
     "future_limit",
     "max_matches",
-    "len3_dist_bits",
-    "len4_dist_bits",
-    "len5_dist_bits",
-    "len6_dist_bits",
-    "len7_dist_bits",
-    "lenx_dist_bits",
-    "lenx_len_bits",
 ]
 
 FILE_VAL = "big_files/enwik8"
@@ -26,8 +19,6 @@ FORMAT_VAL = "fse"
 # Try a range of max_matches values to explore matching limits
 MAX_MATCHES_LIST = [1, 4, 16, 128, 1024, 999999999]
 
-# Static defaults for unused distribution fields under FSE mode
-DUMMY_VAL = 0
 
 # Define parameter ranges (in bytes)
 BLOCK_SIZES = [32768, 131072, 524288, 1048576]
@@ -54,12 +45,5 @@ with open(OUTPUT_FILE, mode="w", newline="\n") as f:
                         window_size,
                         future_limit,
                         max_matches,
-                        DUMMY_VAL,
-                        DUMMY_VAL,
-                        DUMMY_VAL,
-                        DUMMY_VAL,
-                        DUMMY_VAL,
-                        DUMMY_VAL,
-                        DUMMY_VAL,
                     ]
                     writer.writerow(row)
