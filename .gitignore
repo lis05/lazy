@@ -6,5 +6,7 @@ report.txt
 assembly-report.txt
 assembly_report.txt
 benchmark-results
+benchmark-params/*.csv
+__pycache__
 
 

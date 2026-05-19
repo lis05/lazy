@@ -4,39 +4,29 @@
 import sys
 import os
 import subprocess
-import tempfile
+import time
 import csv
 from pathlib import Path
 
 BINARY = "build/lz77"
-TEMP_ENC = "/tmp/encoded"
-TEMP_DEC = "/tmp/decoded"
+TEMP_ENC = "/tmp/encoded_benchmark"
+TEMP_DEC = "/tmp/decoded_benchmark"
 OUTPUT_DIR = "benchmark-results"
 OUTPUT_FILE = f"{OUTPUT_DIR}/results.csv"
-NUM_RUNS = 3
+NUM_RUNS = 2
 
 
-def run_command(cmd):
-    """Run command and return output."""
+def run_command_timed(cmd):
+    """Run command and return elapsed time in seconds."""
     try:
+        start = time.perf_counter()
         result = subprocess.run(
             cmd, shell=True, capture_output=True, text=True)
-        return result.stdout + result.stderr
+        elapsed = time.perf_counter() - start
+        return elapsed
     except Exception as e:
-        return f"Error: {e}"
-
-
-def extract_time(output):
-    """Extract TIME value from command output."""
-    for line in output.split('\n'):
-        if 'TIME:' in line:
-            parts = line.split()
-            if len(parts) >= 2:
-                try:
-                    return float(parts[1])
-                except ValueError:
-                    pass
-    return 0.0
+        print(f"Error running command: {e}", file=sys.stderr)
+        return 0.0
 
 
 def benchmark_row(params):
@@ -63,8 +53,7 @@ def benchmark_row(params):
                f"--window-size {window_size} "
                f"--future-limit {future_limit} "
                f"--max-matches {max_matches}")
-        output = run_command(cmd)
-        time_val = extract_time(output)
+        time_val = run_command_timed(cmd)
         enc_times.append(time_val)
 
     # Run decoding 3 times
@@ -75,8 +64,7 @@ def benchmark_row(params):
                f"--window-size {window_size} "
                f"--future-limit {future_limit} "
                f"--max-matches {max_matches}")
-        output = run_command(cmd)
-        time_val = extract_time(output)
+        time_val = run_command_timed(cmd)
         dec_times.append(time_val)
 
     # Compute average times
@@ -85,8 +73,10 @@ def benchmark_row(params):
     enc_size = os.path.getsize(TEMP_ENC) if os.path.exists(TEMP_ENC) else 0
 
     # Verify decoded file matches original
-    if not os.path.exists(TEMP_DEC) or not files_equal(input_file, TEMP_DEC):
+    error_msg = verify_files(input_file, TEMP_DEC)
+    if error_msg:
         print(f"\nError: Verification failed!", file=sys.stderr)
+        print(f"  {error_msg}", file=sys.stderr)
         print(f"Failed parameters:", file=sys.stderr)
         print(f"  file:            {input_file}", file=sys.stderr)
         print(f"  format:          {format_type}", file=sys.stderr)
@@ -115,19 +105,46 @@ def benchmark_row(params):
     }
 
 
-def files_equal(file1, file2):
-    """Compare two files byte by byte."""
+def verify_files(file1, file2):
+    """Compare two files and return error message if they differ, or None if equal."""
+    if not os.path.exists(file1):
+        return f"Original file not found: {file1}"
+    if not os.path.exists(file2):
+        return f"Decoded file not found: {file2}"
+
+    size1 = os.path.getsize(file1)
+    size2 = os.path.getsize(file2)
+
+    if size1 != size2:
+        return f"File size mismatch: original={size1} bytes, decoded={size2} bytes"
+
     try:
         with open(file1, 'rb') as f1, open(file2, 'rb') as f2:
+            byte_pos = 0
             while True:
                 chunk1 = f1.read(8192)
                 chunk2 = f2.read(8192)
+
                 if chunk1 != chunk2:
-                    return False
+                    # Find exact byte position where they differ
+                    for i, (b1, b2) in enumerate(zip(chunk1, chunk2)):
+                        if b1 != b2:
+                            pos = byte_pos + i
+                            return f"First difference at byte {pos}: original=0x{b1:02x}, decoded=0x{b2:02x}"
+                    # One is longer than the other
+                    return f"Chunks differ in length at position {byte_pos}: original={len(chunk1)} bytes, decoded={len(chunk2)} bytes"
+
                 if not chunk1:
-                    return True
-    except Exception:
-        return False
+                    return None  # Files are identical
+
+                byte_pos += len(chunk1)
+    except Exception as e:
+        return f"Error comparing files: {e}"
+
+
+def files_equal(file1, file2):
+    """Compare two files byte by byte."""
+    return verify_files(file1, file2) is None
 
 
 def main():

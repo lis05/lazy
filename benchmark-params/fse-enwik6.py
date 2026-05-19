@@ -6,7 +6,6 @@ SCRIPT_NAME = os.path.basename(__file__)
 OUTPUT_FILE = os.path.splitext(SCRIPT_NAME)[0] + ".csv"
 
 HEADER = [
-    "file",
     "format",
     "block_size",
     "window_size",
@@ -14,10 +13,10 @@ HEADER = [
     "max_matches",
 ]
 
-FILE_VAL = "big_files/enwik8"
+FILE_VAL = "big_files/enwik6"
 FORMAT_VAL = "fse"
 # Try a range of max_matches values to explore matching limits
-MAX_MATCHES_LIST = [1, 4, 16, 128, 1024, 999999999]
+MAX_MATCHES_LIST = [1, 2, 4, 16, 128, 1024, 999999999]
 
 
 # Define parameter ranges (in bytes)
@@ -39,7 +38,6 @@ with open(OUTPUT_FILE, mode="w", newline="\n") as f:
                     continue
                 for max_matches in MAX_MATCHES_LIST:
                     row = [
-                        FILE_VAL,
                         FORMAT_VAL,
                         block_size,
                         window_size,

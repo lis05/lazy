@@ -64,11 +64,11 @@ int main(int argc, char **argv) {
 
     config::load(block_size, window_size, future_limit, max_matches);
 
-    auto format = formats::format::get_for_option(format_opt);
-    format.verify_config();
-
     auto start_time = std::chrono::high_resolution_clock::now();
     if (run_encoder) {
+        auto format = formats::format::get_for_option(format_opt);
+        format.verify_config();
+
         encoder encoder;
         auto [data_buffer, bytes_loaded] = encoder.for_loading();
 
@@ -99,7 +99,7 @@ int main(int argc, char **argv) {
             if (!(in >> mark)) {
                 break;
             }
-            format = formats::format::get_for_mark(mark);
+            auto format = formats::format::get_for_mark(mark);
             auto tokens = format.read_block(in);
 
             if (tokens.empty()) {
