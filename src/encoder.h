@@ -20,5 +20,5 @@ public:
     encoder();
     std::pair<std::byte *, size_t &> for_loading();
     void                             reset();
-    const std::vector<token>        &encode();
+    const std::vector<token>         encode();
 };

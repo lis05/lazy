@@ -11,14 +11,16 @@ public:
     inline static size_t future_limit = 18;
     inline static size_t prefix_size = 3;
     inline static size_t total_hashes = 1 << (8 * prefix_size);
-
     inline static size_t max_matches = 1 << 29;
+    inline static size_t jobs = 1;
 
-    static void load(size_t b_size, size_t w_size, size_t f_limit, size_t max_m) {
+    static void load(size_t b_size, size_t w_size, size_t f_limit, size_t max_m,
+                     size_t jbs) {
         block_size = b_size;
         window_size = w_size;
         future_limit = f_limit;
         total_hashes = 1 << (8 * prefix_size);
         max_matches = max_m;
+        jobs = jbs;
     }
 };

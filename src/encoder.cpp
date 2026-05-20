@@ -1,5 +1,4 @@
 #include "encoder.h"
-
 #include <algorithm>
 #include <iterator>
 #include <limits>
@@ -12,8 +11,8 @@ encoder::encoder()
     : bytes_loaded(0),
       data(config::block_size),
       tokens(),
-      head(config::total_hashes),
-      prev(config::block_size) {
+      head(),
+      prev() {
 }
 
 std::pair<std::byte *, size_t &> encoder::for_loading() {
@@ -25,11 +24,17 @@ constexpr uint32_t NONE = std::numeric_limits<uint32_t>::max();
 void encoder::reset() {
     bytes_loaded = 0;
     tokens.clear();
-    std::fill(head.begin(), head.end(), NONE);
-    std::fill(prev.begin(), prev.end(), NONE);
+    head.clear();
+    prev.clear();
 }
 
-const std::vector<token> &encoder::encode() {
+const std::vector<token> encoder::encode() {
+    head.resize(config::total_hashes);
+    prev.resize(bytes_loaded);
+
+    std::fill(head.begin(), head.end(), -1);
+    std::fill(prev.begin(), prev.end(), -1);
+
     auto calculate_hashes = [this]() {
         for (size_t i = 0; i + 2 < bytes_loaded; i++) {
             auto h = hashes::hash3(data.data() + i);
