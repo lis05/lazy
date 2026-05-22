@@ -33,10 +33,10 @@ public:
 
 public:
     // can only run once.
-    inline const std::vector<token> encode() {
+    inline std::vector<token> encode() {
         constexpr auto NONE = std::numeric_limits<uint32_t>::max();
 
-        head.resize(config::total_hashes, NONE);
+        head.resize(config::total_hashes(), NONE);
         prev.resize(bytes_loaded, NONE);
 
         std::fill(head.begin(), head.end(), NONE);

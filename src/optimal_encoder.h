@@ -69,11 +69,11 @@ public:
     }
 
 public:
-    inline const std::vector<token> encode() {
+    inline std::vector<token> encode() {
         constexpr auto NONE = std::numeric_limits<uint32_t>::max();
         constexpr auto INF = std::numeric_limits<uint64_t>::max() / 3;
 
-        head.resize(config::total_hashes);
+        head.resize(config::total_hashes());
         prev.resize(bytes_loaded);
 
         std::fill(head.begin(), head.end(), NONE);

@@ -11,6 +11,8 @@
 #include "decoder.h"
 #include "encoder.h"
 #include "formats.h"
+#include "ioreader.h"
+#include "iowriter.h"
 #include "optimal_encoder.h"
 #include "token.h"
 #include "worker_pool.h"
@@ -23,42 +25,44 @@ static void encode(auto &in, auto &out, auto format_opt, auto print_total_tokens
     auto   pool = worker_pool{config::jobs};
     size_t total = 0;
 
-    while (in) {
-        std::vector<std::vector<token>> batch_results(config::jobs);
-        std::latch                      work_done(config::jobs);
+    auto printer = [&out, &format, &total](const std::vector<token> &tokens) {
+        format.write_format_mark(out);
+        format.write_block(tokens, out);
+        total += tokens.size();
+    };
 
-        for (size_t i = 0; i < config::jobs; ++i) {
-            auto buffer = std::make_shared<char[]>(config::block_size);
-            in.read(buffer.get(), config::block_size);
-            size_t bytes = in.gcount();
+    ioreader reader(in, config::blocks, config::block_size);
+    iowriter writer(printer);
 
-            if (bytes == 0) {
-                for (size_t ii = i; ii < config::jobs; ii++) work_done.count_down();
-                break;
-            }
+    std::jthread reader_thread{[&]() { reader.catchup_loop(); }};
+    std::jthread writer_thread{[&]() { writer.catchup_loop(); }};
 
-            pool.enqueue([&, buffer = std::move(buffer), i, bytes] {
+    std::vector<std::jthread> workers(config::jobs);
+    for (size_t i = 0; i < config::jobs; i++) {
+        workers[i] = std::jthread{[&] {
+            while (true) {
+                auto b = reader.get();
+                if (b == std::nullopt) {
+                    break;
+                }
+
                 Encoder encoder;
+
                 auto [data_buffer, bytes_loaded] = encoder.for_loading();
+                std::copy(b.value().data.begin(), b.value().data.end(), data_buffer);
+                bytes_loaded = b.value().data.size();
 
-                memcpy(data_buffer, buffer.get(), bytes);
-                bytes_loaded = bytes;
+                writer.put(b.value().index, std::move(encoder.encode()));
+            }
+        }};
+    };
 
-                batch_results[i] = std::move(encoder.encode());
-                work_done.count_down();
-            });
-        }
-
-        work_done.wait();
-
-        for (const auto &tokens : batch_results) {
-            if (tokens.empty())
-                continue;
-            format.write_format_mark(out);
-            format.write_block(tokens, out);
-            total += tokens.size();
-        }
+    for (auto &worker : workers) {
+        worker.join();
     }
+    reader_thread.join();
+    writer.stop();
+    writer_thread.join();
 
     if (print_total_tokens) {
         std::cout << "Total tokens: " << total << "\n";
@@ -113,30 +117,24 @@ int main(int argc, char **argv) {
     app.add_flag("-t", print_total_tokens,
                  "Print total tokens produced (if encoding)");
 
-    bool print_progress = config::print_progress;
-    app.add_flag("-p", print_progress, "Print progress");
+    app.add_flag("-p", config::print_progress, "Print progress");
 
-    size_t jobs = config::jobs;
-    app.add_option("-j", jobs, "Jobs for encoding");
+    app.add_option("-j", config::jobs, "Number of encoders to work in parralel");
+    app.add_option("-b", config::blocks,
+                   "Number of input blocks to read in parralel");
 
     bool run_optimal = false;
     app.add_flag("-O", run_optimal, "Run optimal encoder instead of the greedy one");
 
-    size_t block_size = config::block_size;
-    size_t window_size = config::window_size;
-    size_t future_limit = config::future_limit;
-    size_t max_matches = config::max_matches;
-    bool   lazy_matching = config::lazy_matching;
-
-    app.add_option("--block-size", block_size,
+    app.add_option("--block-size", config::block_size,
                    "LZ77 processing block size in bytes");
-    app.add_option("--window-size", window_size,
+    app.add_option("--window-size", config::window_size,
                    "LZ77 dictionary window size in bytes");
-    app.add_option("--future-limit", future_limit,
+    app.add_option("--future-limit", config::future_limit,
                    "LZ77 lookahead buffer limit size");
-    app.add_option("--max-matches", max_matches,
+    app.add_option("--max-matches", config::max_matches,
                    "LZ77 max matches before acceptation");
-    app.add_flag("--lazy-matching", lazy_matching, "Do lazy matching");
+    app.add_flag("--lazy-matching", config::lazy_matching, "Do lazy matching");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -152,8 +150,6 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    config::load(block_size, window_size, future_limit, max_matches, jobs,
-                 print_progress, lazy_matching);
     auto start_time = std::chrono::high_resolution_clock::now();
     if (run_encoder) {
         config::total_bytes =
