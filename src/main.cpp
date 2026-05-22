@@ -1,5 +1,7 @@
+#include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <filesystem>
 #include <iostream>
 #include <latch>
 #include <map>
@@ -9,9 +11,11 @@
 #include "decoder.h"
 #include "encoder.h"
 #include "formats.h"
+#include "optimal_encoder.h"
 #include "token.h"
 #include "worker_pool.h"
 
+template <typename Encoder>
 static void encode(auto &in, auto &out, auto format_opt, auto print_total_tokens) {
     auto format = formats::format::get_for_option(format_opt);
     format.verify_config();
@@ -34,14 +38,13 @@ static void encode(auto &in, auto &out, auto format_opt, auto print_total_tokens
             }
 
             pool.enqueue([&, buffer = std::move(buffer), i, bytes] {
-                encoder encoder;
+                Encoder encoder;
                 auto [data_buffer, bytes_loaded] = encoder.for_loading();
 
                 memcpy(data_buffer, buffer.get(), bytes);
                 bytes_loaded = bytes;
 
                 batch_results[i] = std::move(encoder.encode());
-                encoder.reset();
                 work_done.count_down();
             });
         }
@@ -110,13 +113,20 @@ int main(int argc, char **argv) {
     app.add_flag("-t", print_total_tokens,
                  "Print total tokens produced (if encoding)");
 
+    bool print_progress = config::print_progress;
+    app.add_flag("-p", print_progress, "Print progress");
+
     size_t jobs = config::jobs;
     app.add_option("-j", jobs, "Jobs for encoding");
+
+    bool run_optimal = false;
+    app.add_flag("-O", run_optimal, "Run optimal encoder instead of the greedy one");
 
     size_t block_size = config::block_size;
     size_t window_size = config::window_size;
     size_t future_limit = config::future_limit;
     size_t max_matches = config::max_matches;
+    bool   lazy_matching = config::lazy_matching;
 
     app.add_option("--block-size", block_size,
                    "LZ77 processing block size in bytes");
@@ -126,6 +136,7 @@ int main(int argc, char **argv) {
                    "LZ77 lookahead buffer limit size");
     app.add_option("--max-matches", max_matches,
                    "LZ77 max matches before acceptation");
+    app.add_flag("--lazy-matching", lazy_matching, "Do lazy matching");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -134,17 +145,27 @@ int main(int argc, char **argv) {
         std::cerr << "Failed to read from " << input_file << std::endl;
         return -1;
     }
+
     std::ofstream out(output_file, std::ios::binary);
     if (!out.is_open()) {
         std::cerr << "Failed to write to " << input_file << std::endl;
         return -1;
     }
 
-    config::load(block_size, window_size, future_limit, max_matches, jobs);
-
+    config::load(block_size, window_size, future_limit, max_matches, jobs,
+                 print_progress, lazy_matching);
     auto start_time = std::chrono::high_resolution_clock::now();
     if (run_encoder) {
-        encode(in, out, format_opt, print_total_tokens);
+        config::total_bytes =
+            std::filesystem::file_size(std::filesystem::path{input_file});
+        config::processed_bytes = 0;
+
+        auto printer = std::jthread{config::report_progress};
+        if (run_optimal) {
+            encode<optimal_encoder>(in, out, format_opt, print_total_tokens);
+        } else {
+            encode<encoder>(in, out, format_opt, print_total_tokens);
+        }
     } else if (run_decoder) {
         decode(in, out);
     }
