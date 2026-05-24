@@ -1,207 +1,198 @@
-#!/usr/bin/env python3
-"""Benchmark script for LZ77 compression with multiple runs and verification."""
-
+#!/bin/env python3
+import subprocess
+import filecmp
+import time
 import sys
 import os
-import subprocess
-import time
+import itertools
 import csv
-from pathlib import Path
 
-BINARY = "build/lz77"
-TEMP_ENC = "/tmp/encoded_benchmark"
-TEMP_DEC = "/tmp/decoded_benchmark"
-OUTPUT_DIR = "benchmark-results"
-OUTPUT_FILE = f"{OUTPUT_DIR}/results.csv"
-NUM_RUNS = 2
+compressor = "./build/lz77"
 
-
-def run_command_timed(cmd):
-    """Run command and return elapsed time in seconds."""
+def encode(src, dest, args):
+    args_str = ' '.join(map(str, args))
     try:
-        start = time.perf_counter()
-        result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True)
-        elapsed = time.perf_counter() - start
-        return elapsed
-    except Exception as e:
-        print(f"Error running command: {e}", file=sys.stderr)
-        return 0.0
+        res = subprocess.run([compressor, "-e", "-i", src, "-o", dest, *args],
+                             check=True)
+    except:
+        print(f"Encode ({compressor} -e -i {src} -o {dest} {args_str}) failed.")
+        exit(1)
 
-
-def benchmark_row(params):
-    """Benchmark a single parameter set."""
-    input_file = params['file']
-    format_type = params['format']
-    block_size = params['block_size']
-    window_size = params['window_size']
-    future_limit = params['future_limit']
-    max_matches = params['max_matches']
-
-    if not os.path.exists(input_file):
-        print(
-            f"Error: Input file '{input_file}' not found. Skipping row.", file=sys.stderr)
-        return None
-
-    orig_size = os.path.getsize(input_file)
-
-    # Run encoding 3 times
-    enc_times = []
-    for i in range(NUM_RUNS):
-        cmd = (f"{BINARY} -e -i '{input_file}' -o '{TEMP_ENC}' -f '{format_type}' -m "
-               f"--block-size {block_size} "
-               f"--window-size {window_size} "
-               f"--future-limit {future_limit} "
-               f"--max-matches {max_matches}")
-        time_val = run_command_timed(cmd)
-        enc_times.append(time_val)
-
-    # Run decoding 3 times
-    dec_times = []
-    for i in range(NUM_RUNS):
-        cmd = (f"{BINARY} -d -i '{TEMP_ENC}' -o '{TEMP_DEC}' -m "
-               f"--block-size {block_size} "
-               f"--window-size {window_size} "
-               f"--future-limit {future_limit} "
-               f"--max-matches {max_matches}")
-        time_val = run_command_timed(cmd)
-        dec_times.append(time_val)
-
-    # Compute average times
-    enc_time_avg = sum(enc_times) / len(enc_times) if enc_times else 0
-    dec_time_avg = sum(dec_times) / len(dec_times) if dec_times else 0
-    enc_size = os.path.getsize(TEMP_ENC) if os.path.exists(TEMP_ENC) else 0
-
-    # Verify decoded file matches original
-    error_msg = verify_files(input_file, TEMP_DEC)
-    if error_msg:
-        print(f"\nError: Verification failed!", file=sys.stderr)
-        print(f"  {error_msg}", file=sys.stderr)
-        print(f"Failed parameters:", file=sys.stderr)
-        print(f"  file:            {input_file}", file=sys.stderr)
-        print(f"  format:          {format_type}", file=sys.stderr)
-        print(f"  block_size:      {block_size}", file=sys.stderr)
-        print(f"  window_size:     {window_size}", file=sys.stderr)
-        print(f"  future_limit:    {future_limit}", file=sys.stderr)
-        print(f"  max_matches:     {max_matches}", file=sys.stderr)
-        return None
-
-    # Calculate speeds and ratio
-    enc_mbps = (orig_size / 1048576) / enc_time_avg if enc_time_avg > 0 else 0
-    dec_mbps = (orig_size / 1048576) / dec_time_avg if dec_time_avg > 0 else 0
-    ratio = (enc_size / orig_size * 100) if orig_size > 0 else 0
-
-    return {
-        'file': input_file,
-        'format': format_type,
-        'block_size': block_size,
-        'window_size': window_size,
-        'future_limit': future_limit,
-        'max_matches': max_matches,
-        'enc_speed_mbps': f"{enc_mbps:.2f}",
-        'dec_speed_mbps': f"{dec_mbps:.2f}",
-        'enc_size': enc_size,
-        'ratio': f"{ratio:.2f}%"
-    }
-
-
-def verify_files(file1, file2):
-    """Compare two files and return error message if they differ, or None if equal."""
-    if not os.path.exists(file1):
-        return f"Original file not found: {file1}"
-    if not os.path.exists(file2):
-        return f"Decoded file not found: {file2}"
-
-    size1 = os.path.getsize(file1)
-    size2 = os.path.getsize(file2)
-
-    if size1 != size2:
-        return f"File size mismatch: original={size1} bytes, decoded={size2} bytes"
-
+def decode(src, dest, args):
+    args_str = ' '.join(map(str, args))
     try:
-        with open(file1, 'rb') as f1, open(file2, 'rb') as f2:
-            byte_pos = 0
-            while True:
-                chunk1 = f1.read(8192)
-                chunk2 = f2.read(8192)
+        res = subprocess.run([compressor, "-d", "-i", src, "-o", dest, *args],
+                             check=True)
+    except:
+        print(f"Decode ({compressor} -d -i {src} -o {dest} {args_str}) failed.")
+        exit(1)
 
-                if chunk1 != chunk2:
-                    # Find exact byte position where they differ
-                    for i, (b1, b2) in enumerate(zip(chunk1, chunk2)):
-                        if b1 != b2:
-                            pos = byte_pos + i
-                            return f"First difference at byte {pos}: original=0x{b1:02x}, decoded=0x{b2:02x}"
-                    # One is longer than the other
-                    return f"Chunks differ in length at position {byte_pos}: original={len(chunk1)} bytes, decoded={len(chunk2)} bytes"
+def compare(src, dest):
+    if not filecmp.cmp(src, dest, shallow=False):
+        print(f"Files are not the same: {src} and {dest}")
 
-                if not chunk1:
-                    return None  # Files are identical
+def gen_normal_tests():
+    formats = ("-f", ("ctx",))
+    jobs = ("-j", (1, 2, 4, 8, 16))
+    blocks = ("-b", (1,))
+    optimal_encoder = ("-O", (False, True))
+    block_size = ("--block-size", [1 << x for x in range(14, 21, 2)])
+    window_size = ("--window-size", [1 << x for x in range(12, 21, 2)])
+    future_limit = ("--future-limit", [1 << x for x in range(12, 21, 2)])
+    max_matches = ("--max-matches", (10, 1000, 0))
+    lazy_matching = ("--lazy-matching", (False, True))
 
-                byte_pos += len(chunk1)
-    except Exception as e:
-        return f"Error comparing files: {e}"
+    params = [formats, jobs, blocks, optimal_encoder, block_size, window_size, future_limit,
+              max_matches, lazy_matching]
 
+    keys = [item[0] for item in params]
+    value_lists = [item[1] for item in params]
 
-def files_equal(file1, file2):
-    """Compare two files byte by byte."""
-    return verify_files(file1, file2) is None
+    tests = []
 
+    for combination in itertools.product(*value_lists):
+        test = dict(zip(keys, combination))
 
-def main():
-    if len(sys.argv) != 2:
-        print("Usage: benchmark.py <params_file>", file=sys.stderr)
-        sys.exit(1)
+        if test[optimal_encoder[0]] and test[lazy_matching[0]]:
+            continue
+        if not test[optimal_encoder[0]]:
+            del test[optimal_encoder[0]]
+        if not test[lazy_matching[0]]:
+            del test[lazy_matching[0]]
 
-    params_file = sys.argv[1]
+        if test[block_size[0]] < test[window_size[0]]:
+            continue
+        if test[block_size[0]] < test[future_limit[0]]:
+            continue
 
-    if not os.path.exists(params_file):
-        print(
-            f"Error: Parameters file '{params_file}' not found.", file=sys.stderr)
-        sys.exit(1)
+        tests += [test]
 
-    if not os.path.exists(BINARY):
-        print(f"Error: Binary '{BINARY}' not found.", file=sys.stderr)
-        sys.exit(1)
-
-    # Create output directory
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    # Read parameters
-    rows_to_process = []
-    with open(params_file, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            rows_to_process.append(row)
-
-    total_rows = len(rows_to_process)
-    print(f"Writing results to {OUTPUT_FILE}", file=sys.stderr)
-
-    # Process rows and write results
-    results = []
-    for idx, param_row in enumerate(rows_to_process, 1):
-        print(
-            f"\rProgress: {idx}/{total_rows} ({100*idx//total_rows}%)", end='', file=sys.stderr)
-        result = benchmark_row(param_row)
-        if result:
-            results.append(result)
-
-    print(f"\nFinished processing all benchmarks.", file=sys.stderr)
-
-    # Write output CSV
-    if results:
-        fieldnames = list(results[0].keys())
-        with open(OUTPUT_FILE, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(results)
-
-    print(f"Results saved to: {OUTPUT_FILE}", file=sys.stderr)
-
-    # Cleanup
-    for temp_file in [TEMP_ENC, TEMP_DEC]:
-        if os.path.exists(temp_file):
-            os.remove(temp_file)
+    return tests
 
 
-if __name__ == "__main__":
-    main()
+def gen_slow_tests(file_size):
+    splits = (32, 16, 8, 4, 2, 1)
+
+    formats = ("-f", ("ctx",))
+    jobs = ("-j", [min(12, e) for e in splits])
+    blocks = ("-b", (1,))
+    optimal_encoder = ("-O", (False, True))
+    block_size = ("--block-size", [file_size // e + 1 for e in splits])
+    window_size = ("--window-size", [e for e in block_size[1]])
+    future_limit = ("--future-limit", [e for e in block_size[1]])
+    max_matches = ("--max-matches", (0,))
+    lazy_matching = ("--lazy-matching", (False, True))
+
+    params = [formats, jobs, blocks, optimal_encoder, block_size, window_size, future_limit,
+              max_matches, lazy_matching]
+
+    keys = [item[0] for item in params]
+    value_lists = [item[1] for item in params]
+
+    tests = []
+
+    for combination in itertools.product(*value_lists):
+        test = dict(zip(keys, combination))
+
+        if test[optimal_encoder[0]] and test[lazy_matching[0]]:
+            continue
+        if not test[optimal_encoder[0]]:
+            del test[optimal_encoder[0]]
+        if not test[lazy_matching[0]]:
+            del test[lazy_matching[0]]
+
+        if test[block_size[0]] != test[window_size[0]]:
+            continue
+        if test[block_size[0]] != test[future_limit[0]]:
+            continue
+
+        tests += [test]
+
+    return tests
+
+def measure(fn, *args):
+    before = time.time()
+    fn(*args)
+    return time.time() - before
+
+def run_test(file, test):
+    encoded = "/tmp/encoded_benchmark"
+    decoded = "/tmp/decoded_benchmark"
+
+    stringified = " ".join(
+        f"{a} {b}" if not isinstance(b, bool) else (a if b else "")
+        for a, b in test.items()
+    )
+
+    enc_time = measure(encode, file, encoded, stringified.split())
+    dec_time = measure(decode, encoded, decoded, stringified.split())
+    compare(file, decoded)
+
+    orig = os.path.getsize(file)
+    enc = os.path.getsize(encoded)
+    ratio = round(100 * enc / orig, 1)
+
+    return [orig, enc, ratio, enc_time, dec_time]
+
+def run_normal_tests(file):
+    res = []
+    tests = gen_normal_tests()
+
+    for i, test in enumerate(tests):
+        print("%s / %s" % (str(i), str(len(tests))))
+        test_res = run_test(file, test)
+        res += [test, test_res]
+
+    return res
+
+def run_slow_tests(file):
+    res = []
+    tests = gen_slow_tests(os.path.getsize(file))
+
+    for i, test in enumerate(tests):
+        print("%s / %s" % (str(i), str(len(tests))))
+        test_res = run_test(file, test)
+        res += [test, test_res]
+
+    return res
+
+
+def save_to_csv(data, filename):
+    if not data:
+        return
+
+    test_dicts = data[0::2]
+    test_results = data[1::2]
+
+    fieldnames = []
+    for d in test_dicts:
+        for k in d.keys():
+            if k not in fieldnames:
+                fieldnames.append(k)
+
+    result_headers = ["orig_size", "enc_size", "ratio", "enc_time", "dec_time"]
+    fieldnames.extend(result_headers)
+
+    with open(filename, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for t_dict, t_res in zip(test_dicts, test_results):
+            row = t_dict.copy()
+            row["orig_size"] = t_res[0]
+            row["enc_size"] = t_res[1]
+            row["ratio"] = t_res[2]
+            row["enc_time"] = t_res[3]
+            row["dec_time"] = t_res[4]
+            writer.writerow(row)
+
+mode = sys.argv[1]
+file = sys.argv[2]
+name = "results/results-" + mode + "-" + file.split("/")[-1] + ".csv"
+
+if mode == "normal":
+    save_to_csv(run_normal_tests(file), name)
+elif mode == "slow":
+    save_to_csv(run_slow_tests(file), name)
+else:
+    print("Wrong mode")
