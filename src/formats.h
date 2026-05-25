@@ -614,41 +614,53 @@ static inline uint32_t get_length_base_from_ctx(uint32_t ctx) {
 struct header {
     uint32_t n_dist_ctx;
     uint32_t n_len_ctx;
+    uint32_t n_lit_ctx;
     uint32_t bytes_dist_ctx;
     uint32_t bytes_len_ctx;
+    uint32_t bytes_lit_ctx;
     uint32_t bytes_extra;
 
     ::fse::flag dist_fse_flag;
     ::fse::flag len_fse_flag;
+    ::fse::flag lit_fse_flag;
 
     friend std::ifstream& operator>>(std::ifstream& in, header& h) {
         in.read(reinterpret_cast<char*>(&h.n_dist_ctx), sizeof(h.n_dist_ctx));
         in.read(reinterpret_cast<char*>(&h.n_len_ctx), sizeof(h.n_len_ctx));
+        in.read(reinterpret_cast<char*>(&h.n_lit_ctx), sizeof(h.n_lit_ctx));
         in.read(reinterpret_cast<char*>(&h.bytes_dist_ctx),
                 sizeof(h.bytes_dist_ctx));
         in.read(reinterpret_cast<char*>(&h.bytes_len_ctx), sizeof(h.bytes_len_ctx));
+        in.read(reinterpret_cast<char*>(&h.bytes_lit_ctx), sizeof(h.bytes_lit_ctx));
         in.read(reinterpret_cast<char*>(&h.bytes_extra), sizeof(h.bytes_extra));
         in.read(reinterpret_cast<char*>(&h.dist_fse_flag), sizeof(h.dist_fse_flag));
         in.read(reinterpret_cast<char*>(&h.len_fse_flag), sizeof(h.len_fse_flag));
+        in.read(reinterpret_cast<char*>(&h.lit_fse_flag), sizeof(h.lit_fse_flag));
         return in;
     }
     friend std::ofstream& operator<<(std::ofstream& out, const header& h) {
         out.write(reinterpret_cast<const char*>(&h.n_dist_ctx),
                   sizeof(h.n_dist_ctx));
         out.write(reinterpret_cast<const char*>(&h.n_len_ctx), sizeof(h.n_len_ctx));
+        out.write(reinterpret_cast<const char*>(&h.n_lit_ctx), sizeof(h.n_lit_ctx));
         out.write(reinterpret_cast<const char*>(&h.bytes_dist_ctx),
                   sizeof(h.bytes_dist_ctx));
         out.write(reinterpret_cast<const char*>(&h.bytes_len_ctx),
                   sizeof(h.bytes_len_ctx));
+        out.write(reinterpret_cast<const char*>(&h.bytes_lit_ctx),
+                  sizeof(h.bytes_lit_ctx));
         out.write(reinterpret_cast<const char*>(&h.bytes_extra),
                   sizeof(h.bytes_extra));
         out.write(reinterpret_cast<const char*>(&h.dist_fse_flag),
                   sizeof(h.dist_fse_flag));
         out.write(reinterpret_cast<const char*>(&h.len_fse_flag),
                   sizeof(h.len_fse_flag));
+        out.write(reinterpret_cast<const char*>(&h.lit_fse_flag),
+                  sizeof(h.lit_fse_flag));
         return out;
     }
 };
+
 static void write_format_mark(std::ofstream& out) {
     out << CTX;
 }
@@ -656,11 +668,13 @@ static void write_format_mark(std::ofstream& out) {
 static void write_block(const std::vector<token>& tokens, std::ofstream& out) {
     std::vector<std::byte> dist_ctx;
     std::vector<std::byte> len_ctx;
+    std::vector<std::byte> literals;
     header                 header;
 
     for (auto& t : tokens) {
         if (std::holds_alternative<std::byte>(t)) {
             dist_ctx.push_back(static_cast<std::byte>(0));
+            literals.push_back(std::get<std::byte>(t));
         } else {
             auto m = std::get<match>(t);
             dist_ctx.push_back(
@@ -672,19 +686,22 @@ static void write_block(const std::vector<token>& tokens, std::ofstream& out) {
 
     header.n_dist_ctx = dist_ctx.size();
     header.n_len_ctx = len_ctx.size();
+    header.n_lit_ctx = literals.size();
 
     std::vector<std::byte> out_dist;
     std::vector<std::byte> out_len;
+    std::vector<std::byte> out_lit;
 
     ::fse::compress(dist_ctx, out_dist, header.dist_fse_flag, header.bytes_dist_ctx);
     ::fse::compress(len_ctx, out_len, header.len_fse_flag, header.bytes_len_ctx);
+    ::fse::compress(literals, out_lit, header.lit_fse_flag, header.bytes_lit_ctx);
 
     std::vector<std::byte> out_extra;
     auto                   writer = bit_writer{std::back_inserter(out_extra)};
 
     for (auto& t : tokens) {
         if (std::holds_alternative<std::byte>(t)) {
-            writer.write(static_cast<uint8_t>(std::get<std::byte>(t)), 8);
+            continue;
         } else {
             auto m = std::get<match>(t);
             auto dist_bits = get_distance_extra_bits(m.distance);
@@ -704,6 +721,8 @@ static void write_block(const std::vector<token>& tokens, std::ofstream& out) {
                  out_dist.data());
     ::fse::write(out, header.len_fse_flag, header.bytes_len_ctx, len_ctx.data(),
                  out_len.data());
+    ::fse::write(out, header.lit_fse_flag, header.bytes_lit_ctx, literals.data(),
+                 out_lit.data());
     out.write(reinterpret_cast<const char*>(out_extra.data()), out_extra.size());
 }
 
@@ -715,11 +734,15 @@ static std::vector<token> read_block(std::ifstream& in) {
 
     auto out_dist = ::fse::read(in, h.bytes_dist_ctx);
     auto out_len = ::fse::read(in, h.bytes_len_ctx);
+    auto out_lit = ::fse::read(in, h.bytes_lit_ctx);
 
     std::vector<std::byte> dist_ctx;
     std::vector<std::byte> len_ctx;
+    std::vector<std::byte> literals;
+
     ::fse::decompress(out_dist, dist_ctx, h.dist_fse_flag, h.n_dist_ctx);
     ::fse::decompress(out_len, len_ctx, h.len_fse_flag, h.n_len_ctx);
+    ::fse::decompress(out_lit, literals, h.lit_fse_flag, h.n_lit_ctx);
 
     std::vector<std::byte> extra(h.bytes_extra);
     in.read(reinterpret_cast<char*>(extra.data()), h.bytes_extra);
@@ -730,10 +753,11 @@ static std::vector<token> read_block(std::ifstream& in) {
     tokens.reserve(h.n_dist_ctx);
 
     size_t len_idx = 0;
+    size_t lit_idx = 0;
     for (size_t i = 0; i < h.n_dist_ctx; ++i) {
         uint32_t d_ctx = static_cast<uint32_t>(dist_ctx[i]);
         if (d_ctx == 0) {
-            tokens.push_back(static_cast<std::byte>(reader.read<uint8_t>(8)));
+            tokens.push_back(static_cast<std::byte>(literals[lit_idx++]));
         } else {
             uint32_t d_bits = get_distance_extra_bits_from_ctx(d_ctx);
             uint32_t d_val = reader.read<uint32_t>(d_bits);
