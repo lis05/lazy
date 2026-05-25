@@ -451,6 +451,110 @@ static void verify_config() {
 }  // namespace fse
 
 namespace ctx {
+
+// clang-format off
+//
+// First 2^ReservedBits bins match values 1:1. Next Slots bins contain 2 values and
+// emit 1 extra bit. Next Slots bins contain 4 values and emit 2 extra bits. And so
+// on up until the number of bins reachex MaxBins.
+//
+// clang-format on
+template <uint64_t ReservedBits, uint64_t Slots, uint64_t MaxBins = 256>
+struct bins_cfg {
+    static constexpr uint64_t MAX_RESERVED = ((uint64_t)1 << ReservedBits) - 1;
+    static constexpr uint64_t MAX_VAL() {
+        uint64_t ctx = MAX_RESERVED + 1;
+        uint64_t slot = 0;
+        uint64_t value = ctx;
+        uint64_t value_range = 2;
+
+        uint64_t last_good = 0;
+
+        while (ctx < MaxBins &&
+               value + value_range - 1 < std::numeric_limits<uint32_t>::max()) {
+            last_good = value + value_range - 1;
+            ctx++;
+            slot++;
+            value += value_range;
+            if (slot == Slots) {
+                slot = 0;
+                value_range <<= 1;
+            }
+        }
+
+        return last_good;
+    }
+
+    struct info {
+        uint64_t ctx;
+        uint64_t extra_bits;
+        uint64_t base;
+    };
+
+    static constexpr uint64_t blog2(uint64_t x) {
+        return x == 0 ? 0 : 63 - std::countl_zero(x);
+    }
+
+    static inline info get(uint64_t x) {
+        if (x <= MAX_RESERVED) {
+            return info{x, 0, x};
+        }
+
+        uint64_t ctx = MAX_RESERVED + 1;
+        uint64_t slot = 0;
+        uint64_t value = ctx;
+        uint64_t value_range = 2;
+
+        while (ctx < MaxBins && value + value_range - 1 < MAX_VAL()) {
+            if (value <= x && x < value + value_range) {
+                return info{ctx, blog2(value_range), value};
+            }
+            ctx++;
+            slot++;
+            value += value_range;
+            if (slot == Slots) {
+                slot = 0;
+                value_range <<= 1;
+            }
+        }
+
+        throw std::runtime_error(std::format(
+            "Bad number {}. Cannot process: too large ctx/value range. :C", x));
+        return {};
+    }
+
+    static inline info get_from_ctx(uint64_t c) {
+        if (c <= MAX_RESERVED) {
+            return info{c, 0, c};
+        }
+
+        uint64_t ctx = MAX_RESERVED + 1;
+        uint64_t slot = 0;
+        uint64_t value = ctx;
+        uint64_t value_range = 2;
+
+        while (ctx < MaxBins && value + value_range - 1 < MAX_VAL()) {
+            if (ctx == c) {
+                return info{ctx, blog2(value_range), value};
+            }
+            ctx++;
+            slot++;
+            value += value_range;
+            if (slot == Slots) {
+                slot = 0;
+                value_range <<= 1;
+            }
+        }
+
+        throw std::runtime_error(std::format(
+            "Bad context {}. Cannot process: too large ctx/value range. :C", c));
+        return {};
+    }
+};
+
+using dist_bins = bins_cfg<3, 8>;
+using len_bins = bins_cfg<3, 8>;
+
 static void verify_config() {
     if (config::block_size == 0) {
         throw std::runtime_error("Invalid block size: 0");
@@ -465,150 +569,22 @@ static void verify_config() {
             "Invalid window size: {}. Must be at least 64", config::window_size));
     }
 
+    if (config::window_size > dist_bins::MAX_VAL() ||
+        config::window_size > len_bins::MAX_VAL()) {
+        throw std::runtime_error(std::format(
+            "Invalid window size {}. Must be at most {}", config::window_size,
+            std::min(dist_bins::MAX_VAL(), len_bins::MAX_VAL())));
+    }
+
     if (config::future_limit == 0) {
         throw std::runtime_error("Invalid future limit: 0");
     }
 
-    if (config::future_limit > 134217775) {
+    if (config::future_limit > len_bins::MAX_VAL()) {
         throw std::runtime_error(
-            std::format("Invalid future limit: {}. Must be at most 134217775",
-                        config::future_limit));
+            std::format("Invalid future limit: {}. Must be at most {}",
+                        config::future_limit, len_bins::MAX_VAL()));
     }
-}
-
-// returs how many bits there are that make the value (e.g  for 0b0101 it returns 3)
-static inline int get_important_bits(uint32_t x) {
-    return x == 0 ? 0 : 32 - std::countl_zero(x);
-}
-
-// clang-format off
-/*
- * Each dist context represents more and more distances. 0 is reserved for a literal (the
- * literal goes onto the extra stream). Ctx 1..7 represent distances 1..7. Each next
- * 8 contexts represent distance ranges of size 2^k (k=0,2,...). N(=2,3,...)-th octate of
- * contexts represents distances 2^(N+2)..2^(N+3)-1
- * N     contexts         distances                  extra bits
- * 0     0..7            *0..7                       0
- * 1     8..15            8..15                      0
- * 2     16..23           16..31                     1
- * 3     24..31           32..63                     2
- * ...
- * N     N*8..N*8+7       2^(N+2)..2^(N+3)-1         N-1
- * ...
- * 29    232..240         up to max uint32_t         28
- *
- * context 0 is for literals, they go on the extra stream
- */
-// clang-format on
-static inline int get_distance_context_id(uint32_t x) {
-    if (x < 8) {
-        return x;
-    }
-    auto N = get_important_bits(x) - 3;
-    auto slot = (x >> (N - 1)) & 7;
-    return (N << 3) + slot;
-}
-
-static inline int get_distance_extra_bits(uint32_t x) {
-    if (x < 8) {
-        return 0;
-    }
-    auto N = get_important_bits(x) - 3;
-    return N - 1;
-}
-
-static inline int get_distance_extra_bits_from_ctx(int ctx) {
-    if (ctx < 8) {
-        return 0;
-    }
-    return (ctx >> 3) - 1;
-}
-
-static inline uint32_t get_distance_base(uint32_t x) {
-    if (x < 8) {
-        return x;
-    }
-    auto N = get_important_bits(x) - 3;
-    auto slot = (x >> (N - 1)) & 7;
-    auto slot_size = 1u << (N - 1);
-    return (1u << (N + 2)) + slot * slot_size;
-}
-
-static inline uint32_t get_distance_base_from_ctx(uint32_t ctx) {
-    if (ctx < 8) {
-        return ctx;
-    }
-    uint32_t N = ctx >> 3;
-    uint32_t slot = ctx & 7;
-    uint32_t slot_size = 1u << (N - 1);
-    return (1u << (N + 2)) + slot * slot_size;
-}
-
-// clang-format off
-/*
- * Lengths are dealt with similarly to distances, but smaller lengths are much, much
- * more common, so we have more contexts for very small lengths.
- * N     contexts         lengths                    extra bits
- * 0     0..7             0..7                       0
- * ...                                               0
- * 7     56..63           56..63                     0
- * 8     64..71           64..79                     1
- * 9     72..79           80..111                    2
- * ...
- * N     N*8..N*8+7       48+2^(N-4)..47+2^(N-3)     N-7
- * ...
- * 30    240..247         67108912..134217775        23
- *
- * ?       ?                ?                        ?
- *
- * context 0 is for literals, they go on the extra stream
- */
-// clang-format on
-static inline int get_length_context_id(uint32_t x) {
-    if (x < 64) {
-        return x;
-    }
-    auto y = x - 48;
-    auto N = get_important_bits(y) + 3;
-    auto slot = (y >> (N - 7)) & 7;
-    return (N << 3) + slot;
-}
-
-static inline int get_length_extra_bits(uint32_t x) {
-    if (x < 64) {
-        return 0;
-    }
-    auto y = x - 48;
-    auto N = get_important_bits(y) + 3;
-    return N - 7;
-}
-
-static inline int get_length_extra_bits_from_ctx(uint32_t ctx) {
-    if (ctx < 64) {
-        return 0;
-    }
-    return (ctx >> 3) - 7;
-}
-
-static inline uint32_t get_length_base(uint32_t x) {
-    if (x < 64) {
-        return x;
-    }
-    auto y = x - 48;
-    auto N = get_important_bits(y) + 3;
-    auto slot = (y >> (N - 7)) & 7;
-    auto slot_size = 1u << (N - 7);
-    return 48 + (1u << (N - 4)) + slot * slot_size;
-}
-
-static inline uint32_t get_length_base_from_ctx(uint32_t ctx) {
-    if (ctx < 64) {
-        return ctx;
-    }
-    uint32_t N = ctx >> 3;
-    uint32_t slot = ctx & 7;
-    uint32_t slot_size = 1u << (N - 7);
-    return 48 + (1u << (N - 4)) + slot * slot_size;
 }
 
 struct header {
@@ -678,9 +654,8 @@ static void write_block(const std::vector<token>& tokens, std::ofstream& out) {
         } else {
             auto m = std::get<match>(t);
             dist_ctx.push_back(
-                static_cast<std::byte>(get_distance_context_id(m.distance)));
-            len_ctx.push_back(
-                static_cast<std::byte>(get_length_context_id(m.length)));
+                static_cast<std::byte>(dist_bins::get(m.distance).ctx));
+            len_ctx.push_back(static_cast<std::byte>(len_bins::get(m.length).ctx));
         }
     }
 
@@ -704,13 +679,13 @@ static void write_block(const std::vector<token>& tokens, std::ofstream& out) {
             continue;
         } else {
             auto m = std::get<match>(t);
-            auto dist_bits = get_distance_extra_bits(m.distance);
-            auto len_bits = get_length_extra_bits(m.length);
-            auto dist_val = m.distance - get_distance_base(m.distance);
-            auto len_val = m.length - get_length_base(m.length);
+            auto dbins = dist_bins::get(m.distance);
+            auto lbins = len_bins::get(m.length);
+            auto dist_val = m.distance - dbins.base;
+            auto len_val = m.length - lbins.base;
 
-            writer.write(dist_val, dist_bits);
-            writer.write(len_val, len_bits);
+            writer.write(dist_val, dbins.extra_bits);
+            writer.write(len_val, lbins.extra_bits);
         }
     }
     writer.flush();
@@ -759,14 +734,14 @@ static std::vector<token> read_block(std::ifstream& in) {
         if (d_ctx == 0) {
             tokens.push_back(static_cast<std::byte>(literals[lit_idx++]));
         } else {
-            uint32_t d_bits = get_distance_extra_bits_from_ctx(d_ctx);
-            uint32_t d_val = reader.read<uint32_t>(d_bits);
-            uint32_t dist = get_distance_base_from_ctx(d_ctx) + d_val;
+            auto     dbins = dist_bins::get_from_ctx(d_ctx);
+            uint32_t d_val = reader.read<uint32_t>(dbins.extra_bits);
+            uint32_t dist = dbins.base + d_val;
 
             uint32_t l_ctx = static_cast<uint32_t>(len_ctx[len_idx++]);
-            uint32_t l_bits = get_length_extra_bits_from_ctx(l_ctx);
-            uint32_t l_val = reader.read<uint32_t>(l_bits);
-            uint32_t len = get_length_base_from_ctx(l_ctx) + l_val;
+            auto     lbins = len_bins::get_from_ctx(l_ctx);
+            uint32_t l_val = reader.read<uint32_t>(lbins.extra_bits);
+            uint32_t len = lbins.base + l_val;
 
             tokens.push_back(match{.distance = dist, .length = len});
         }

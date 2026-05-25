@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <utility>
 #include <vector>
 
@@ -29,7 +30,8 @@ public:
             } else {
                 auto [distance, length] = std::get<match>(t);
                 if (distance > data.size()) {
-                    throw std::runtime_error("Invalid distance");
+                    throw std::runtime_error(
+                        std::format("Invalid distance: {}", distance));
                 }
                 for (size_t i = data.size() - distance, len = 0; len < length;
                      len++, i++) {

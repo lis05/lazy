@@ -36,11 +36,5 @@ if [ "$res" == "0" ]; then
     exit 0
 else
     echo "FAIL"
-    echo "============= $to_encode ============="
-    head -20 $to_encode
-    echo "============= encoded ============="
-    head -20 /tmp/encoded
-    echo "============= decoded ============="
-    head -20 /tmp/decoded
     exit 1
 fi
