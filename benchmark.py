@@ -9,27 +9,33 @@ import csv
 
 compressor = "./build/lz77"
 
+
 def encode(src, dest, args):
-    args_str = ' '.join(map(str, args))
+    args_str = " ".join(map(str, args))
     try:
-        res = subprocess.run([compressor, "-e", "-i", src, "-o", dest, *args],
-                             check=True)
+        res = subprocess.run(
+            [compressor, "-e", "-i", src, "-o", dest, *args], check=True
+        )
     except:
         print(f"Encode ({compressor} -e -i {src} -o {dest} {args_str}) failed.")
         exit(1)
 
+
 def decode(src, dest, args):
-    args_str = ' '.join(map(str, args))
+    args_str = " ".join(map(str, args))
     try:
-        res = subprocess.run([compressor, "-d", "-i", src, "-o", dest, *args],
-                             check=True)
+        res = subprocess.run(
+            [compressor, "-d", "-i", src, "-o", dest, *args], check=True
+        )
     except:
         print(f"Decode ({compressor} -d -i {src} -o {dest} {args_str}) failed.")
         exit(1)
 
+
 def compare(src, dest):
     if not filecmp.cmp(src, dest, shallow=False):
         print(f"Files are not the same: {src} and {dest}")
+
 
 def gen_normal_tests():
     formats = ("-f", ("ctx",))
@@ -42,8 +48,17 @@ def gen_normal_tests():
     max_matches = ("--max-matches", (10, 1000, 0))
     lazy_matching = ("--lazy-matching", (False, True))
 
-    params = [formats, jobs, blocks, optimal_encoder, block_size, window_size, future_limit,
-              max_matches, lazy_matching]
+    params = [
+        formats,
+        jobs,
+        blocks,
+        optimal_encoder,
+        block_size,
+        window_size,
+        future_limit,
+        max_matches,
+        lazy_matching,
+    ]
 
     keys = [item[0] for item in params]
     value_lists = [item[1] for item in params]
@@ -83,8 +98,17 @@ def gen_slow_tests(file_size):
     max_matches = ("--max-matches", (0,))
     lazy_matching = ("--lazy-matching", (False, True))
 
-    params = [formats, jobs, blocks, optimal_encoder, block_size, window_size, future_limit,
-              max_matches, lazy_matching]
+    params = [
+        formats,
+        jobs,
+        blocks,
+        optimal_encoder,
+        block_size,
+        window_size,
+        future_limit,
+        max_matches,
+        lazy_matching,
+    ]
 
     keys = [item[0] for item in params]
     value_lists = [item[1] for item in params]
@@ -110,12 +134,15 @@ def gen_slow_tests(file_size):
 
     return tests
 
+
 def measure(fn, *args):
     before = time.time()
     fn(*args)
     return time.time() - before
 
+
 def run_test(file, test):
+    print("Running", test)
     encoded = "/tmp/encoded_benchmark"
     decoded = "/tmp/decoded_benchmark"
 
@@ -134,6 +161,7 @@ def run_test(file, test):
 
     return [orig, enc, ratio, enc_time, dec_time]
 
+
 def run_normal_tests(file):
     res = []
     tests = gen_normal_tests()
@@ -144,6 +172,7 @@ def run_normal_tests(file):
         res += [test, test_res]
 
     return res
+
 
 def run_slow_tests(file):
     res = []
@@ -173,7 +202,7 @@ def save_to_csv(data, filename):
     result_headers = ["orig_size", "enc_size", "ratio", "enc_time", "dec_time"]
     fieldnames.extend(result_headers)
 
-    with open(filename, 'w', newline='') as f:
+    with open(filename, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
 
@@ -185,6 +214,7 @@ def save_to_csv(data, filename):
             row["enc_time"] = t_res[3]
             row["dec_time"] = t_res[4]
             writer.writerow(row)
+
 
 mode = sys.argv[1]
 file = sys.argv[2]

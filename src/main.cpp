@@ -107,9 +107,6 @@ int main(int argc, char **argv) {
     std::string output_file = "";
     app.add_option("-o", output_file, "Output file");
 
-    std::string format_opt = "fse";
-    app.add_option("-f", format_opt, "Output format (if encoding)");
-
     bool measure_time = false;
     app.add_flag("-m", measure_time, "Measure execution time");
 
@@ -119,13 +116,17 @@ int main(int argc, char **argv) {
 
     app.add_flag("-p", config::print_progress, "Print progress");
 
+    app.add_option("-l", config::level,
+                   "Compression level (-1 = allow individual parameters, 1 = "
+                   "fastest(default), 12 = very good compression in reasonable "
+                   "time, 13-15 = best compression in unreasonably big time");
+
+    std::string format_opt = "ctx";
+    app.add_option("-f", format_opt,
+                   "Output format (if encoding): readable, fse, ctx(default)");
     app.add_option("-j", config::jobs, "Number of encoders to work in parralel");
     app.add_option("-b", config::blocks,
                    "Number of input blocks to read in parralel");
-
-    bool run_optimal = false;
-    app.add_flag("-O", run_optimal, "Run optimal encoder instead of the greedy one");
-
     app.add_option("--block-size", config::block_size,
                    "LZ77 processing block size in bytes");
     app.add_option("--window-size", config::window_size,
@@ -135,6 +136,8 @@ int main(int argc, char **argv) {
     app.add_option("--max-matches", config::max_matches,
                    "LZ77 max matches before acceptation");
     app.add_flag("--lazy-matching", config::lazy_matching, "Do lazy matching");
+    app.add_flag("-O", config::optimal,
+                 "Run optimal encoder instead of the greedy one");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -150,6 +153,9 @@ int main(int argc, char **argv) {
         return -1;
     }
 
+    config::apply_level(config::level, std::filesystem::file_size(
+                                           std::filesystem::path{input_file}));
+
     auto start_time = std::chrono::high_resolution_clock::now();
     if (run_encoder) {
         config::total_bytes =
@@ -157,7 +163,7 @@ int main(int argc, char **argv) {
         config::processed_bytes = 0;
 
         auto printer = std::jthread{config::report_progress};
-        if (run_optimal) {
+        if (config::optimal) {
             encode<optimal_encoder>(in, out, format_opt, print_total_tokens);
         } else {
             encode<encoder>(in, out, format_opt, print_total_tokens);
