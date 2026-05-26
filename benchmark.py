@@ -7,7 +7,7 @@ import os
 import itertools
 import csv
 
-compressor = "./build/lz77"
+compressor = "./build/lazy"
 
 
 def encode(src, dest, args):

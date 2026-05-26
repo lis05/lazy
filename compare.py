@@ -30,11 +30,11 @@ CSV_FILE = f"comparisons/test-{'-'.join(file_names)}.csv"
 
 COMPRESSORS = [
     {
-        "name": "lz77",
+        "name": "lazy",
         "levels": [1, 2, 3, 4, 5, 6, 7, 8],
 
         "compress": lambda f, lvl: [
-            "./build/lz77",
+            "./build/lazy",
             "-e",
             "-i", f,
             "-o", TMP_ENC,
@@ -42,7 +42,7 @@ COMPRESSORS = [
         ] + (["-p"] if int(lvl) >= 8 else []),
 
         "decompress": lambda lvl: [
-            "./build/lz77",
+            "./build/lazy",
             "-d",
             "-i",
             TMP_ENC,
@@ -144,7 +144,7 @@ for file in INPUT_FILES:
     for c in COMPRESSORS:
         name = c["name"]
 
-        if shutil.which(name) is None and name not in ["lz77", "7z", "snappy"]:
+        if shutil.which(name) is None and name not in ["lazy", "7z", "snappy"]:
             print(f"skip {name}")
             continue
 

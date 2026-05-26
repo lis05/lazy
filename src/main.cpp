@@ -13,7 +13,6 @@
 #include "formats.h"
 #include "ioreader.h"
 #include "iowriter.h"
-#include "optimal_encoder.h"
 #include "token.h"
 #include "worker_pool.h"
 
@@ -102,10 +101,10 @@ int main(int argc, char **argv) {
     app.add_flag("-d", run_decoder, "Run decoder");
 
     std::string input_file = "";
-    app.add_option("-i", input_file, "Input file");
+    app.add_option("-i", input_file, "Input file")->required();
 
     std::string output_file = "";
-    app.add_option("-o", output_file, "Output file");
+    app.add_option("-o", output_file, "Output file")->required();
 
     bool measure_time = false;
     app.add_flag("-m", measure_time, "Measure execution time");
@@ -127,17 +126,15 @@ int main(int argc, char **argv) {
     app.add_option("-j", config::jobs, "Number of encoders to work in parralel");
     app.add_option("-b", config::blocks,
                    "Number of input blocks to read in parralel");
-    app.add_option("--block-size", config::block_size,
-                   "LZ77 processing block size in bytes");
-    app.add_option("--window-size", config::window_size,
-                   "LZ77 dictionary window size in bytes");
-    app.add_option("--future-limit", config::future_limit,
-                   "LZ77 lookahead buffer limit size");
-    app.add_option("--max-matches", config::max_matches,
-                   "LZ77 max matches before acceptation");
-    app.add_flag("--lazy-matching", config::lazy_matching, "Do lazy matching");
-    app.add_flag("-O", config::optimal,
-                 "Run optimal encoder instead of the greedy one");
+    app.add_option("--bs", config::block_size,
+                   "Processing block size in bytes");
+    app.add_option("--ws", config::window_size,
+                   "Dictionary window size in bytes");
+    app.add_option("--fl", config::future_limit,
+                   "Lookahead buffer limit size");
+    app.add_option("--mm", config::max_matches,
+                   "Max matches before acceptation");
+    app.add_flag("--lm", config::lazy_matching, "Do lazy matching");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -163,11 +160,7 @@ int main(int argc, char **argv) {
         config::processed_bytes = 0;
 
         auto printer = std::jthread{config::report_progress};
-        if (config::optimal) {
-            encode<optimal_encoder>(in, out, format_opt, print_total_tokens);
-        } else {
-            encode<encoder>(in, out, format_opt, print_total_tokens);
-        }
+        encode<encoder>(in, out, format_opt, print_total_tokens);
     } else if (run_decoder) {
         decode(in, out);
     }

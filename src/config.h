@@ -21,7 +21,6 @@ public:
     inline static size_t blocks = 1;
     inline static bool   print_progress = false;
     inline static bool   lazy_matching = false;
-    inline static bool   optimal = false;
 
     inline static int level = 1;
 
@@ -56,7 +55,6 @@ public:
             future_limit = 1 << 12;
             max_matches = 10;
             lazy_matching = false;
-            optimal = false;
             jobs = std::min(cores, file_size / block_size - file_size + 1);
         } else if (l == 2) {
             blocks = 1;
@@ -65,7 +63,6 @@ public:
             future_limit = 1 << 20;
             max_matches = 0;
             lazy_matching = false;
-            optimal = false;
             jobs = std::min(cores, file_size / block_size - file_size + 1);
         } else if (l == 3) {
             blocks = 1;
@@ -74,7 +71,6 @@ public:
             future_limit = 1 << 16;
             max_matches = 1000;
             lazy_matching = false;
-            optimal = false;
             jobs = std::min(cores, file_size / block_size - file_size + 1);
         } else if (l == 4) {
             blocks = 1;
@@ -83,7 +79,6 @@ public:
             future_limit = 1 << 20;
             max_matches = 0;
             lazy_matching = false;
-            optimal = true;
             jobs = std::min(cores, file_size / block_size - file_size + 1);
         } else if (l == 5) {
             blocks = 1;
@@ -92,7 +87,6 @@ public:
             future_limit = 1 << 18;
             max_matches = 1000;
             lazy_matching = false;
-            optimal = true;
             jobs = std::min(cores, file_size / block_size - file_size + 1);
         } else if (l == 6) {
             blocks = 1;
@@ -101,7 +95,6 @@ public:
             future_limit = 1 << 18;
             max_matches = 1000;
             lazy_matching = false;
-            optimal = true;
             jobs = std::min(cores, file_size / block_size - file_size + 1);
         } else if (l == 7) {
             blocks = 1;
@@ -110,7 +103,6 @@ public:
             future_limit = 1 << 12;
             max_matches = 0;
             lazy_matching = false;
-            optimal = true;
             jobs = std::min(cores, file_size / block_size - file_size + 1);
         } else if (l == 8) {
             blocks = 1;
@@ -119,7 +111,6 @@ public:
             future_limit = 1 << 20;
             max_matches = 0;
             lazy_matching = false;
-            optimal = true;
             jobs = std::min(cores, file_size / block_size - file_size + 1);
         } else if (l == 9) {
             blocks = 1;
@@ -128,7 +119,6 @@ public:
             future_limit = 1 << 21;
             max_matches = 0;
             lazy_matching = false;
-            optimal = true;
             jobs = std::min(cores, file_size / block_size - file_size + 1);
         } else if (l == 10) {
             blocks = 1;
@@ -137,7 +127,6 @@ public:
             future_limit = 1 << 22;
             max_matches = 0;
             lazy_matching = false;
-            optimal = true;
             jobs = std::min(cores, file_size / block_size - file_size + 1);
         } else if (l == 11) {
             blocks = 1;
@@ -146,7 +135,6 @@ public:
             future_limit = 1 << 23;
             max_matches = 0;
             lazy_matching = false;
-            optimal = true;
             jobs = std::min(cores, file_size / block_size - file_size + 1);
         } else if (l == 12) {
             blocks = 1;
@@ -155,7 +143,6 @@ public:
             future_limit = block_size;
             max_matches = 0;
             lazy_matching = false;
-            optimal = true;
             jobs = 8;
         } else if (l == 13) {
             blocks = 1;
@@ -164,7 +151,6 @@ public:
             future_limit = block_size;
             max_matches = 0;
             lazy_matching = false;
-            optimal = true;
             jobs = 4;
         } else if (l == 14) {
             blocks = 1;
@@ -173,7 +159,6 @@ public:
             future_limit = block_size;
             max_matches = 0;
             lazy_matching = false;
-            optimal = true;
             jobs = 2;
         } else if (l == 15) {
             blocks = 1;
@@ -182,7 +167,6 @@ public:
             future_limit = block_size;
             max_matches = 0;
             lazy_matching = false;
-            optimal = true;
             jobs = 1;
         } else {
             return;

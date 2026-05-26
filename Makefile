@@ -9,7 +9,7 @@ CFLAGS=-O3 -g -ftree-vectorize -march=native -std=gnu11 -Ithird_party/finitestat
 LDFLAGS=-g
 LDLIBS=
 
-TARGET=build/lz77
+TARGET=build/lazy
 
 SOURCES=$(wildcard src/*.cpp)
 FSE_SOURCES=$(wildcard third_party/finitestateentropy/lib/*.c)
