@@ -126,15 +126,12 @@ int main(int argc, char **argv) {
     app.add_option("-j", config::jobs, "Number of encoders to work in parralel");
     app.add_option("-b", config::blocks,
                    "Number of input blocks to read in parralel");
-    app.add_option("--bs", config::block_size,
-                   "Processing block size in bytes");
-    app.add_option("--ws", config::window_size,
-                   "Dictionary window size in bytes");
-    app.add_option("--fl", config::future_limit,
-                   "Lookahead buffer limit size");
-    app.add_option("--mm", config::max_matches,
-                   "Max matches before acceptation");
-    app.add_flag("--lm", config::lazy_matching, "Do lazy matching");
+    app.add_option("--bs", config::block_size, "Processing block size in bytes");
+    app.add_option("--ws", config::window_size, "Dictionary window size in bytes");
+    app.add_option("--fl", config::future_limit, "Lookahead buffer limit size");
+    app.add_option("--mm", config::max_matches, "Max matches before acceptation");
+    app.add_option("--lm", config::lazy_matching,
+                   "Bytes to skip during lazy matching");
 
     CLI11_PARSE(app, argc, argv);
 

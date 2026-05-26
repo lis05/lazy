@@ -38,21 +38,20 @@ def compare(src, dest):
 
 
 def gen_normal_tests():
+    levels = ("-l", (0,))
     formats = ("-f", ("ctx",))
     jobs = ("-j", (1, 2, 4, 8, 16))
-    blocks = ("-b", (1,))
-    optimal_encoder = ("-O", (False, True))
-    block_size = ("--block-size", [1 << x for x in range(14, 21, 2)])
-    window_size = ("--window-size", [1 << x for x in range(12, 21, 2)])
-    future_limit = ("--future-limit", [1 << x for x in range(12, 21, 2)])
-    max_matches = ("--max-matches", (10, 1000, 0))
-    lazy_matching = ("--lazy-matching", (False, True))
+    block_size = ("--bs", [1 << x for x in range(14, 21, 1)])
+    window_size = ("--ws", [1 << x for x in range(12, 21, 1)])
+    future_limit = ("--fl", [1 << x for x in range(12, 21, 1)])
+    max_matches = ("--mm", (10, 1000, 0))
+    lazy_matching = ("--lm", (False, True))
 
     params = [
+        levels,
         formats,
         jobs,
         blocks,
-        optimal_encoder,
         block_size,
         window_size,
         future_limit,
@@ -68,10 +67,6 @@ def gen_normal_tests():
     for combination in itertools.product(*value_lists):
         test = dict(zip(keys, combination))
 
-        if test[optimal_encoder[0]] and test[lazy_matching[0]]:
-            continue
-        if not test[optimal_encoder[0]]:
-            del test[optimal_encoder[0]]
         if not test[lazy_matching[0]]:
             del test[lazy_matching[0]]
 
@@ -83,57 +78,6 @@ def gen_normal_tests():
         tests += [test]
 
     return tests
-
-
-def gen_slow_tests(file_size):
-    splits = (32, 16, 8, 4, 2, 1)
-
-    formats = ("-f", ("ctx",))
-    jobs = ("-j", [min(12, e) for e in splits])
-    blocks = ("-b", (1,))
-    optimal_encoder = ("-O", (False, True))
-    block_size = ("--block-size", [file_size // e + 1 for e in splits])
-    window_size = ("--window-size", [e for e in block_size[1]])
-    future_limit = ("--future-limit", [e for e in block_size[1]])
-    max_matches = ("--max-matches", (0,))
-    lazy_matching = ("--lazy-matching", (False, True))
-
-    params = [
-        formats,
-        jobs,
-        blocks,
-        optimal_encoder,
-        block_size,
-        window_size,
-        future_limit,
-        max_matches,
-        lazy_matching,
-    ]
-
-    keys = [item[0] for item in params]
-    value_lists = [item[1] for item in params]
-
-    tests = []
-
-    for combination in itertools.product(*value_lists):
-        test = dict(zip(keys, combination))
-
-        if test[optimal_encoder[0]] and test[lazy_matching[0]]:
-            continue
-        if not test[optimal_encoder[0]]:
-            del test[optimal_encoder[0]]
-        if not test[lazy_matching[0]]:
-            del test[lazy_matching[0]]
-
-        if test[block_size[0]] != test[window_size[0]]:
-            continue
-        if test[block_size[0]] != test[future_limit[0]]:
-            continue
-
-        tests += [test]
-
-    return tests
-
 
 def measure(fn, *args):
     before = time.time()
@@ -173,19 +117,6 @@ def run_normal_tests(file):
 
     return res
 
-
-def run_slow_tests(file):
-    res = []
-    tests = gen_slow_tests(os.path.getsize(file))
-
-    for i, test in enumerate(tests):
-        print("%s / %s" % (str(i), str(len(tests))))
-        test_res = run_test(file, test)
-        res += [test, test_res]
-
-    return res
-
-
 def save_to_csv(data, filename):
     if not data:
         return
@@ -216,13 +147,3 @@ def save_to_csv(data, filename):
             writer.writerow(row)
 
 
-mode = sys.argv[1]
-file = sys.argv[2]
-name = "results/results-" + mode + "-" + file.split("/")[-1] + ".csv"
-
-if mode == "normal":
-    save_to_csv(run_normal_tests(file), name)
-elif mode == "slow":
-    save_to_csv(run_slow_tests(file), name)
-else:
-    print("Wrong mode")

@@ -31,7 +31,8 @@ public:
                 auto [distance, length] = std::get<match>(t);
                 if (distance > data.size()) {
                     throw std::runtime_error(
-                        std::format("Invalid distance: {}", distance));
+                        std::format("Invalid distance: {} (data has {} bytes)",
+                                    distance, data.size()));
                 }
                 for (size_t i = data.size() - distance, len = 0; len < length;
                      len++, i++) {
