@@ -26,13 +26,12 @@ for arg in sys.argv[1:]:
     INPUT_FILES.append(path)
     file_names.append(os.path.basename(path))
 
-CSV_FILE = f"compressor-test-{'-'.join(file_names)}.csv"
+CSV_FILE = f"comparisons/test-{'-'.join(file_names)}.csv"
 
 COMPRESSORS = [
     {
         "name": "lz77",
-        # Full levels: 1 to 15 (1 fastest, 15 slowest/best)
-        "levels": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "levels": [1, 2, 3, 4, 5, 6, 7, 8],
 
         "compress": lambda f, lvl: [
             "./build/lz77",

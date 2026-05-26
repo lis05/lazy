@@ -33,16 +33,15 @@ public:
             return;
         }
 
-        static int next_percent = 1;
-
         do {
             using namespace std::chrono_literals;
             std::this_thread::sleep_for(1000ms);
-            while (100 * processed_bytes / total_bytes >= next_percent) {
-                std::cout << "Progress: " << next_percent << "%" << std::endl;
-                next_percent++;
-            }
+            std::cout << '\r'
+                      << "Progress: " << (100 * processed_bytes / total_bytes)
+                      << "% (" << processed_bytes << " / " << total_bytes << ")"
+                      << std::flush;
         } while (processed_bytes != total_bytes);
+        std::cout << std::endl;
     }
 
     static void apply_level(int l, size_t file_size) {
