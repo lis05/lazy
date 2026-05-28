@@ -1,12 +1,2 @@
-obj
-build
-perf.data
-perf.data.old
-report.txt
-assembly-report.txt
-assembly_report.txt
-benchmark-results
-benchmark-params/*.csv
-__pycache__
-
-
+# Created by venv; see https://docs.python.org/3/library/venv.html
+*

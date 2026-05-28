@@ -16,10 +16,10 @@ public:
     inline static size_t total_hashes() {
         return 1 << (8 * prefix_size);
     }
-    inline static size_t max_matches = 0;
-    inline static size_t jobs = 1;
-    inline static size_t blocks = 1;
-    inline static bool   print_progress = false;
+    inline static uint64_t max_matches = 0;
+    inline static size_t   jobs = 1;
+    inline static size_t   blocks = 1;
+    inline static bool     print_progress = false;
     inline static uint32_t lazy_matching = 1;
 
     inline static int level = 0;

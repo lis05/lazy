@@ -1,46 +1,36 @@
 #!/bin/env python3
 import sys
 import os
-import glob
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
 try:
-    from dash import Dash, dcc, html, Input, Output, State, dash_table
+    from dash import Dash, dcc, html, Input, Output, State, dash_table, ctx
 except ImportError:
     print("Error: 'dash' is required. Install with: pip install dash pandas")
     sys.exit(1)
 
 
 def load_data(csv_path):
-    if os.path.isdir(csv_path):
-        csv_files = glob.glob(os.path.join(csv_path, "*.csv"))
-        if not csv_files:
-            print(f"Error: No CSV files found in directory '{csv_path}'.")
-            sys.exit(1)
-    else:
-        csv_files = [csv_path]
-
-    df_list = []
-    for file in csv_files:
-        try:
-            temp_df = pd.read_csv(file)
-            base_name = os.path.splitext(os.path.basename(file))[0]
-            temp_df["file_name"] = base_name
-            df_list.append(temp_df)
-        except Exception as e:
-            print(f"Warning: Failed to read '{file}'. Skipping. Error: {e}")
-
-    if not df_list:
-        print("Error: No data could be loaded.")
+    if not os.path.isfile(csv_path):
+        print(f"Error: File '{csv_path}' does not exist.")
         sys.exit(1)
 
-    df = pd.concat(df_list, ignore_index=True)
+    try:
+        df = pd.read_csv(csv_path)
+    except Exception as e:
+        print(f"Error reading CSV: {e}")
+        sys.exit(1)
+
+    if "filename" not in df.columns:
+        print("Error: CSV must contain a 'filename' column.")
+        sys.exit(1)
+
     df["log_enc_time"] = np.log10(df["enc_time"].replace(0, np.nan))
 
-    for col in ["-O", "--lazy-matching"]:
+    for col in ["-O", "--lazy-matching", "--lm"]:
         if col in df.columns:
             df[col] = df[col].fillna(False).astype(int)
 
@@ -49,20 +39,23 @@ def load_data(csv_path):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python dashboard.py <results_dir_or_file.csv>")
+        print(f"Usage: {sys.argv[0]} <results.csv>")
         sys.exit(1)
 
     df = load_data(sys.argv[1])
 
     metrics = ["ratio", "enc_time", "log_enc_time", "dec_time", "enc_size", "orig_size"]
-    ignore_cols = metrics + ["file_name"]
+    ignore_cols = metrics + ["filename"]
     parameters = [col for col in df.columns if col not in ignore_cols]
 
-    initial_x = parameters[0] if parameters else df.columns[0]
+    initial_x = "log_enc_time" if "log_enc_time" in df.columns else (parameters[0] if parameters else df.columns[0])
     initial_y = "ratio" if "ratio" in df.columns else metrics[0]
     initial_color = parameters[1] if len(parameters) > 1 else parameters[0]
 
     app = Dash(__name__, suppress_callback_exceptions=True)
+
+    all_files = list(df["filename"].unique())
+    default_files = [f for f in all_files if f != "AVERAGE"]
 
     app.layout = html.Div(
         [
@@ -131,16 +124,42 @@ if __name__ == "__main__":
             ),
             html.Div(
                 [
-                    html.Label(
-                        "Active Datasets (Recalculates Pareto):",
-                        style={"fontWeight": "bold", "display": "block"},
+                    html.Div(
+                        [
+                            html.Label(
+                                "Active Datasets (Recalculates Pareto):",
+                                style={"fontWeight": "bold", "display": "inline-block", "marginRight": "10px"},
+                            ),
+                            html.Button(
+                                "Enable All but AVERAGE",
+                                id="btn-select-no-avg",
+                                style={
+                                    "padding": "4px 8px",
+                                    "cursor": "pointer",
+                                    "backgroundColor": "#f0f0f0",
+                                    "border": "1px solid #ccc",
+                                    "borderRadius": "4px",
+                                    "marginRight": "10px",
+                                },
+                            ),
+                            html.Button(
+                                "Show Only AVERAGE",
+                                id="btn-select-only-avg",
+                                style={
+                                    "padding": "4px 8px",
+                                    "cursor": "pointer",
+                                    "backgroundColor": "#f0f0f0",
+                                    "border": "1px solid #ccc",
+                                    "borderRadius": "4px",
+                                },
+                            ),
+                        ],
+                        style={"display": "flex", "alignItems": "center", "marginBottom": "5px"},
                     ),
                     dcc.Checklist(
                         id="dataset-filter",
-                        options=[
-                            {"label": f, "value": f} for f in df["file_name"].unique()
-                        ],
-                        value=list(df["file_name"].unique()),
+                        options=[{"label": f, "value": f} for f in all_files],
+                        value=default_files,
                         inline=True,
                         inputStyle={"marginRight": "5px", "marginLeft": "10px"},
                     ),
@@ -157,6 +176,20 @@ if __name__ == "__main__":
     )
 
     @app.callback(
+        Output("dataset-filter", "value"),
+        Input("btn-select-no-avg", "n_clicks"),
+        Input("btn-select-only-avg", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def update_selection_buttons(btn_no_avg, btn_only_avg):
+        triggered_id = ctx.triggered_id
+        if triggered_id == "btn-select-no-avg":
+            return default_files
+        elif triggered_id == "btn-select-only-avg":
+            return ["AVERAGE"] if "AVERAGE" in all_files else []
+        return default_files
+
+    @app.callback(
         Output("scatter-plot", "figure"),
         Output("pareto-table-container", "children"),
         Input("x-axis", "value"),
@@ -165,7 +198,7 @@ if __name__ == "__main__":
         Input("dataset-filter", "value"),
     )
     def update_dashboard(x_col, y_col, color_col, selected_datasets):
-        filtered_df = df[df["file_name"].isin(selected_datasets)]
+        filtered_df = df[df["filename"].isin(selected_datasets)]
 
         if filtered_df.empty:
             return go.Figure(), html.Div()
@@ -175,7 +208,7 @@ if __name__ == "__main__":
             x=x_col,
             y=y_col,
             color=color_col,
-            symbol="file_name",
+            symbol="filename",
             template="plotly_white",
             color_continuous_scale="viridis",
             custom_data=list(filtered_df.columns),
@@ -222,10 +255,9 @@ if __name__ == "__main__":
                     go.Scatter(
                         x=pareto_df[x_col],
                         y=pareto_df[y_col],
-                        mode="lines+markers",
+                        mode="lines",
                         name="Pareto Front",
                         line=dict(color="red", width=2, dash="dash"),
-                        marker=dict(symbol="star", size=12, color="red"),
                         hoverinfo="skip",
                         showlegend=False,
                     )
@@ -290,7 +322,7 @@ if __name__ == "__main__":
         if not n_clicks:
             return None
 
-        filtered_df = df[df["file_name"].isin(selected_datasets)]
+        filtered_df = df[df["filename"].isin(selected_datasets)]
         pareto_conditions = (x_col == "log_enc_time" and y_col == "ratio") or (
             x_col == "ratio" and y_col == "log_enc_time"
         )
@@ -314,3 +346,4 @@ if __name__ == "__main__":
 
     print("Starting dashboard server at http://127.0.0.1:8050/")
     app.run(debug=False)
+

@@ -122,10 +122,10 @@ int main(int argc, char **argv) {
 
     std::string format_opt = "ctx";
     app.add_option("-f", format_opt,
-                   "Output format (if encoding): readable, fse, ctx(default)");
-    app.add_option("-j", config::jobs, "Number of encoders to work in parralel");
+                   "Output format (if encoding): readable, ctx(default)");
+    app.add_option("-j", config::jobs, "Number of encoders to work in parallel");
     app.add_option("-b", config::blocks,
-                   "Number of input blocks to read in parralel");
+                   "Number of input blocks to read in parallel");
     app.add_option("--bs", config::block_size, "Processing block size in bytes");
     app.add_option("--ws", config::window_size, "Dictionary window size in bytes");
     app.add_option("--fl", config::future_limit, "Lookahead buffer limit size");

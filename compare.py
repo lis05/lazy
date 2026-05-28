@@ -32,15 +32,17 @@ COMPRESSORS = [
     {
         "name": "lazy",
         "levels": [1, 2, 3, 4, 5, 6, 7, 8],
-
         "compress": lambda f, lvl: [
             "./build/lazy",
             "-e",
-            "-i", f,
-            "-o", TMP_ENC,
-            "-l", str(lvl),
-        ] + (["-p"] if int(lvl) >= 8 else []),
-
+            "-i",
+            f,
+            "-o",
+            TMP_ENC,
+            "-l",
+            str(lvl),
+        ]
+        + (["-p"] if int(lvl) >= 8 else []),
         "decompress": lambda lvl: [
             "./build/lazy",
             "-d",
@@ -126,9 +128,7 @@ def run(cmd, out=None):
         with open(out, "wb") as f:
             subprocess.run(cmd, stdout=f, stderr=subprocess.DEVNULL, check=True)
     else:
-        subprocess.run(
-            cmd, stderr=subprocess.DEVNULL, check=True
-        )
+        subprocess.run(cmd, stderr=subprocess.DEVNULL, check=True)
 
     return time.perf_counter() - start
 
@@ -234,4 +234,3 @@ with open(CSV_FILE, "w", newline="") as f:
     writer.writerows(results)
 
 print(f"\ndone -> {CSV_FILE}")
-
