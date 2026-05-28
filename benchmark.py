@@ -39,7 +39,7 @@ def compare(src, dest):
 
 def gen_normal_tests():
     levels = ("-l", (0,))
-    formats = ("-f", ("ctx",))
+    formats = ("-f", ("ctx", "turbo",))
     jobs = ("-j", (16,))
     block_size = ("--bs", [1 << x for x in range(15, 21, 1)])
     window_size = ("--ws", [1 << x for x in range(15, 21, 1)])
@@ -102,21 +102,7 @@ def run_test(file, test):
     return [orig, enc, ratio, enc_time, dec_time]
 
 
-def get_past_row(past_results, config, filename):
-    for row in past_results:
-        if row.get("filename") != filename:
-            continue
-        match = True
-        for k, v in config.items():
-            if str(row.get(k)) != str(v):
-                match = False
-                break
-        if match:
-            return row
-    return None
-
-
-def run_all_tests(folder, csv_filename, start_index):
+def run_all_tests(folder, csv_filename):
     if not os.path.isdir(folder):
         print(f"Error: Directory '{folder}' does not exist.")
         sys.exit(1)
@@ -135,31 +121,32 @@ def run_all_tests(folder, csv_filename, start_index):
         print("No configurations to test.")
         return
 
-    expected_fieldnames = list(tests[0].keys()) + [
+    config_keys = list(tests[0].keys())
+    expected_fieldnames = config_keys + [
         "filename", "orig_size", "enc_size", "ratio", "enc_time", "dec_time"
     ]
 
-    operations = []
-    for test in tests:
-        for f in files:
-            operations.append({"type": "test", "config": test, "file": f})
-        operations.append({"type": "avg", "config": test})
-
-    csv_valid = False
-    past_results = []
+    # 1. Load CSV into memory dict
+    past_dict = {}
     if os.path.exists(csv_filename):
         try:
             with open(csv_filename, "r", newline="") as f:
                 reader = csv.DictReader(f)
                 if reader.fieldnames and set(expected_fieldnames).issubset(set(reader.fieldnames)):
-                    past_results = list(reader)
-                    csv_valid = True
+                    for row in reader:
+                        key = (row["filename"], tuple(str(row.get(k)) for k in config_keys))
+                        past_dict[key] = {
+                            "orig_size": float(row.get("orig_size", 0)),
+                            "enc_size": float(row.get("enc_size", 0)),
+                            "enc_time": float(row.get("enc_time", 0)),
+                            "dec_time": float(row.get("dec_time", 0))
+                        }
         except Exception:
             pass
 
-    file_mode = "a" if csv_valid else "w"
-
+    file_mode = "a" if past_dict else "w"
     total = len(tests) * (len(files) + 1)
+    i = 0
 
     with open(csv_filename, file_mode, newline="") as f:
         writer = csv.DictWriter(f, fieldnames=expected_fieldnames)
@@ -167,55 +154,69 @@ def run_all_tests(folder, csv_filename, start_index):
             writer.writeheader()
             f.flush()
 
-        current_sums = {"orig": 0, "enc": 0, "enc_time": 0.0, "dec_time": 0.0, "count": 0}
+        for test in tests:
+            config_tuple = tuple(str(test[k]) for k in config_keys)
+            
+            orig_sum = 0.0
+            enc_sum = 0.0
+            enc_time_sum = 0.0
+            dec_time_sum = 0.0
+            count = 0
 
-        for i, op in enumerate(operations):
-            if i < start_index:
-                if op["type"] == "test":
-                    row = get_past_row(past_results, op["config"], op["file"])
-                    if row:
-                        current_sums["orig"] += float(row["orig_size"])
-                        current_sums["enc"] += float(row["enc_size"])
-                        current_sums["enc_time"] += float(row["enc_time"])
-                        current_sums["dec_time"] += float(row["dec_time"])
-                        current_sums["count"] += 1
-                elif op["type"] == "avg":
-                    current_sums = {"orig": 0, "enc": 0, "enc_time": 0.0, "dec_time": 0.0, "count": 0}
-                continue
-
-            if op["type"] == "test":
-                print(f"[{i}/{total}] Running file: {op['file']} | config: {op['config']}")
-                orig, enc, ratio, enc_time, dec_time = run_test(op["file"], op["config"])
-
-                current_sums["orig"] += orig
-                current_sums["enc"] += enc
-                current_sums["enc_time"] += enc_time
-                current_sums["dec_time"] += dec_time
-                current_sums["count"] += 1
-
-                row = op["config"].copy()
-                row["filename"] = op["file"]
-                row["orig_size"] = orig
-                row["enc_size"] = enc
-                row["ratio"] = ratio
-                row["enc_time"] = enc_time
-                row["dec_time"] = dec_time
-
-                writer.writerow(row)
-                f.flush()
-                os.fsync(f.fileno())
-
-            elif op["type"] == "avg":
-                print(f"[{i}/{total}] Computing AVERAGE | config: {op['config']}")
-                n = current_sums["count"]
+            for file in files:
+                i += 1
+                lookup_key = (file, config_tuple)
                 
-                avg_orig = current_sums["orig"] / n if n > 0 else 0
-                avg_enc = current_sums["enc"] / n if n > 0 else 0
-                avg_ratio = round(100 * current_sums["enc"] / current_sums["orig"], 1) if current_sums["orig"] > 0 else 0
-                avg_enc_time = current_sums["enc_time"] / n if n > 0 else 0
-                avg_dec_time = current_sums["dec_time"] / n if n > 0 else 0
+                # 3. Check if test has been run via dict
+                if lookup_key in past_dict:
+                    past_row = past_dict[lookup_key]
+                    orig_sum += past_row["orig_size"]
+                    enc_sum += past_row["enc_size"]
+                    enc_time_sum += past_row["enc_time"]
+                    dec_time_sum += past_row["dec_time"]
+                    count += 1
+                else:
+                    print(f"[{i}/{total}] Running file: {file} | config: {test}")
+                    orig, enc, ratio, enc_time, dec_time = run_test(file, test)
 
-                row = op["config"].copy()
+                    orig_sum += orig
+                    enc_sum += enc
+                    enc_time_sum += enc_time
+                    dec_time_sum += dec_time
+                    count += 1
+
+                    row = test.copy()
+                    row["filename"] = file
+                    row["orig_size"] = orig
+                    row["enc_size"] = enc
+                    row["ratio"] = ratio
+                    row["enc_time"] = enc_time
+                    row["dec_time"] = dec_time
+
+                    writer.writerow(row)
+                    f.flush()
+                    
+                    # 2. Add new test to dict
+                    past_dict[lookup_key] = {
+                        "orig_size": orig,
+                        "enc_size": enc,
+                        "enc_time": enc_time,
+                        "dec_time": dec_time
+                    }
+
+            i += 1
+            avg_lookup_key = ("AVERAGE", config_tuple)
+            
+            if avg_lookup_key not in past_dict:
+                print(f"[{i}/{total}] Computing AVERAGE | config: {test}")
+                
+                avg_orig = orig_sum / count if count > 0 else 0
+                avg_enc = enc_sum / count if count > 0 else 0
+                avg_ratio = round(100 * enc_sum / orig_sum, 1) if orig_sum > 0 else 0
+                avg_enc_time = enc_time_sum / count if count > 0 else 0
+                avg_dec_time = dec_time_sum / count if count > 0 else 0
+
+                row = test.copy()
                 row["filename"] = "AVERAGE"
                 row["orig_size"] = avg_orig
                 row["enc_size"] = avg_enc
@@ -225,19 +226,21 @@ def run_all_tests(folder, csv_filename, start_index):
 
                 writer.writerow(row)
                 f.flush()
-                os.fsync(f.fileno())
-
-                current_sums = {"orig": 0, "enc": 0, "enc_time": 0.0, "dec_time": 0.0, "count": 0}
+                
+                past_dict[avg_lookup_key] = {
+                    "orig_size": avg_orig,
+                    "enc_size": avg_enc,
+                    "enc_time": avg_enc_time,
+                    "dec_time": avg_dec_time
+                }
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (3, 4):
-        print(f"Usage: {sys.argv[0]} <input_folder> <output_csv> [start_index]")
+    if len(sys.argv) != 3:
+        print(f"Usage: {sys.argv[0]} <input_folder> <output_csv>")
         sys.exit(1)
 
     input_folder = sys.argv[1]
     output_csv = sys.argv[2]
-    start_index = int(sys.argv[3]) if len(sys.argv) == 4 else 0
 
-    run_all_tests(input_folder, output_csv, start_index)
-
+    run_all_tests(input_folder, output_csv)

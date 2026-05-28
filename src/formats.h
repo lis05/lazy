@@ -546,16 +546,16 @@ static std::vector<token> read_block(std::ifstream& in) {
         return {};
     }
 
-    std::vector<std::byte> out_dist{h.bytes_dist_ctx};
-    std::vector<std::byte> out_len{h.bytes_len_ctx};
-    std::vector<std::byte> out_lit{h.bytes_lit_ctx};
+    std::vector<std::byte> out_dist(h.bytes_dist_ctx);
+    std::vector<std::byte> out_len(h.bytes_len_ctx);
+    std::vector<std::byte> out_lit(h.bytes_lit_ctx);
     in.read(reinterpret_cast<char*>(out_dist.data()), out_dist.size());
     in.read(reinterpret_cast<char*>(out_len.data()), out_len.size());
     in.read(reinterpret_cast<char*>(out_lit.data()), out_lit.size());
 
-    std::vector<std::byte> dist_ctx{h.n_dist_ctx};
-    std::vector<std::byte> len_ctx{h.n_len_ctx};
-    std::vector<std::byte> literals{h.n_lit_ctx};
+    std::vector<std::byte> dist_ctx(h.n_dist_ctx);
+    std::vector<std::byte> len_ctx(h.n_len_ctx);
+    std::vector<std::byte> literals(h.n_lit_ctx);
 
     ::turborc::decompress(out_dist, dist_ctx);
     ::turborc::decompress(out_len, len_ctx);
