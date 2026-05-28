@@ -9,7 +9,7 @@
 namespace fse {
 
 extern "C" {
-#include <fse.h>
+#include <finitestateentropy/lib/fse.h>
 }
 
 enum flag : uint8_t {

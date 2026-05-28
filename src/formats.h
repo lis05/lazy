@@ -10,18 +10,20 @@
 #include <vector>
 
 extern "C" {
-#include <fse.h>
+#include <finitestateentropy/lib/fse.h>
 }
 
 #include "bitstream.h"
 #include "fse.h"
 #include "token.h"
+#include "turborc.h"
 
 namespace formats {
 
 enum marks : unsigned char {
     READABLE,
-    CTX
+    CTX,
+    TURBO,
 };
 
 using write_format_mark_fn = void (*)(std::ofstream&);
@@ -398,6 +400,198 @@ static std::vector<token> read_block(std::ifstream& in) {
     return tokens;
 }
 }  // namespace ctx
+
+namespace turbo {
+
+using ctx::bins_cfg;
+using dist_bins = bins_cfg<3, 8>;
+using len_bins = bins_cfg<3, 8>;
+
+static void verify_config() {
+    if (config::block_size == 0) {
+        throw std::runtime_error("Invalid block size: 0");
+    }
+
+    if (config::window_size == 0) {
+        throw std::runtime_error("Invalid window size: 0");
+    }
+
+    if (config::window_size < 64) {
+        throw std::runtime_error(std::format(
+            "Invalid window size: {}. Must be at least 64", config::window_size));
+    }
+
+    if (config::window_size > dist_bins::MAX_VAL() ||
+        config::window_size > len_bins::MAX_VAL()) {
+        throw std::runtime_error(std::format(
+            "Invalid window size {}. Must be at most {}", config::window_size,
+            std::min(dist_bins::MAX_VAL(), len_bins::MAX_VAL())));
+    }
+
+    if (config::future_limit == 0) {
+        throw std::runtime_error("Invalid future limit: 0");
+    }
+
+    if (config::future_limit > len_bins::MAX_VAL()) {
+        throw std::runtime_error(
+            std::format("Invalid future limit: {}. Must be at most {}",
+                        config::future_limit, len_bins::MAX_VAL()));
+    }
+}
+
+struct header {
+    uint32_t n_dist_ctx;
+    uint32_t n_len_ctx;
+    uint32_t n_lit_ctx;
+    uint32_t bytes_dist_ctx;
+    uint32_t bytes_len_ctx;
+    uint32_t bytes_lit_ctx;
+    uint32_t bytes_extra;
+
+    friend std::ifstream& operator>>(std::ifstream& in, header& h) {
+        in.read(reinterpret_cast<char*>(&h.n_dist_ctx), sizeof(h.n_dist_ctx));
+        in.read(reinterpret_cast<char*>(&h.n_len_ctx), sizeof(h.n_len_ctx));
+        in.read(reinterpret_cast<char*>(&h.n_lit_ctx), sizeof(h.n_lit_ctx));
+        in.read(reinterpret_cast<char*>(&h.bytes_dist_ctx),
+                sizeof(h.bytes_dist_ctx));
+        in.read(reinterpret_cast<char*>(&h.bytes_len_ctx), sizeof(h.bytes_len_ctx));
+        in.read(reinterpret_cast<char*>(&h.bytes_lit_ctx), sizeof(h.bytes_lit_ctx));
+        in.read(reinterpret_cast<char*>(&h.bytes_extra), sizeof(h.bytes_extra));
+        return in;
+    }
+    friend std::ofstream& operator<<(std::ofstream& out, const header& h) {
+        out.write(reinterpret_cast<const char*>(&h.n_dist_ctx),
+                  sizeof(h.n_dist_ctx));
+        out.write(reinterpret_cast<const char*>(&h.n_len_ctx), sizeof(h.n_len_ctx));
+        out.write(reinterpret_cast<const char*>(&h.n_lit_ctx), sizeof(h.n_lit_ctx));
+        out.write(reinterpret_cast<const char*>(&h.bytes_dist_ctx),
+                  sizeof(h.bytes_dist_ctx));
+        out.write(reinterpret_cast<const char*>(&h.bytes_len_ctx),
+                  sizeof(h.bytes_len_ctx));
+        out.write(reinterpret_cast<const char*>(&h.bytes_lit_ctx),
+                  sizeof(h.bytes_lit_ctx));
+        out.write(reinterpret_cast<const char*>(&h.bytes_extra),
+                  sizeof(h.bytes_extra));
+        return out;
+    }
+};
+
+static void write_format_mark(std::ofstream& out) {
+    out << TURBO;
+}
+
+static void write_block(const std::vector<token>& tokens, std::ofstream& out) {
+    std::vector<std::byte> dist_ctx;
+    std::vector<std::byte> len_ctx;
+    std::vector<std::byte> literals;
+    header                 header;
+
+    for (auto& t : tokens) {
+        if (std::holds_alternative<std::byte>(t)) {
+            dist_ctx.push_back(static_cast<std::byte>(0));
+            literals.push_back(std::get<std::byte>(t));
+        } else {
+            auto m = std::get<match>(t);
+            dist_ctx.push_back(
+                static_cast<std::byte>(dist_bins::get(m.distance).ctx));
+            len_ctx.push_back(static_cast<std::byte>(len_bins::get(m.length).ctx));
+        }
+    }
+
+    header.n_dist_ctx = dist_ctx.size();
+    header.n_len_ctx = len_ctx.size();
+    header.n_lit_ctx = literals.size();
+
+    std::vector<std::byte> out_dist;
+    std::vector<std::byte> out_len;
+    std::vector<std::byte> out_lit;
+
+    ::turborc::compress(dist_ctx, out_dist);
+    ::turborc::compress(len_ctx, out_len);
+    ::turborc::compress(literals, out_lit);
+    header.bytes_dist_ctx = out_dist.size();
+    header.bytes_len_ctx = out_len.size();
+    header.bytes_lit_ctx = out_lit.size();
+
+    std::vector<std::byte> out_extra;
+    auto                   writer = bit_writer{std::back_inserter(out_extra)};
+
+    for (auto& t : tokens) {
+        if (std::holds_alternative<std::byte>(t)) {
+            continue;
+        } else {
+            auto m = std::get<match>(t);
+            auto dbins = dist_bins::get(m.distance);
+            auto lbins = len_bins::get(m.length);
+            auto dist_val = m.distance - dbins.base;
+            auto len_val = m.length - lbins.base;
+
+            writer.write(dist_val, dbins.extra_bits);
+            writer.write(len_val, lbins.extra_bits);
+        }
+    }
+    writer.flush();
+    header.bytes_extra = out_extra.size();
+
+    out << header;
+    out.write(reinterpret_cast<const char*>(out_dist.data()), out_dist.size());
+    out.write(reinterpret_cast<const char*>(out_len.data()), out_len.size());
+    out.write(reinterpret_cast<const char*>(out_lit.data()), out_lit.size());
+    out.write(reinterpret_cast<const char*>(out_extra.data()), out_extra.size());
+}
+
+static std::vector<token> read_block(std::ifstream& in) {
+    header h;
+    if (!(in >> h)) {
+        return {};
+    }
+
+    std::vector<std::byte> out_dist{h.bytes_dist_ctx};
+    std::vector<std::byte> out_len{h.bytes_len_ctx};
+    std::vector<std::byte> out_lit{h.bytes_lit_ctx};
+    in.read(reinterpret_cast<char*>(out_dist.data()), out_dist.size());
+    in.read(reinterpret_cast<char*>(out_len.data()), out_len.size());
+    in.read(reinterpret_cast<char*>(out_lit.data()), out_lit.size());
+
+    std::vector<std::byte> dist_ctx{h.n_dist_ctx};
+    std::vector<std::byte> len_ctx{h.n_len_ctx};
+    std::vector<std::byte> literals{h.n_lit_ctx};
+
+    ::turborc::decompress(out_dist, dist_ctx);
+    ::turborc::decompress(out_len, len_ctx);
+    ::turborc::decompress(out_lit, literals);
+
+    std::vector<std::byte> extra(h.bytes_extra);
+    in.read(reinterpret_cast<char*>(extra.data()), h.bytes_extra);
+
+    bit_reader reader{extra.begin()};
+
+    std::vector<token> tokens;
+    tokens.reserve(h.n_dist_ctx);
+
+    size_t len_idx = 0;
+    size_t lit_idx = 0;
+    for (size_t i = 0; i < h.n_dist_ctx; ++i) {
+        uint32_t d_ctx = static_cast<uint32_t>(dist_ctx[i]);
+        if (d_ctx == 0) {
+            tokens.push_back(static_cast<std::byte>(literals[lit_idx++]));
+        } else {
+            auto     dbins = dist_bins::get_from_ctx(d_ctx);
+            uint32_t d_val = reader.read<uint32_t>(dbins.extra_bits);
+            uint32_t dist = dbins.base + d_val;
+
+            uint32_t l_ctx = static_cast<uint32_t>(len_ctx[len_idx++]);
+            auto     lbins = len_bins::get_from_ctx(l_ctx);
+            uint32_t l_val = reader.read<uint32_t>(lbins.extra_bits);
+            uint32_t len = lbins.base + l_val;
+
+            tokens.push_back(match{.distance = dist, .length = len});
+        }
+    }
+
+    return tokens;
+}
+}  // namespace turbo
 struct format {
     write_format_mark_fn write_format_mark;
     write_block_fn       write_block;
@@ -414,13 +608,20 @@ struct format {
                       ctx::verify_config};
     }
 
+    static format get_turbo() {
+        return format{turbo::write_format_mark, turbo::write_block,
+                      turbo::read_block, turbo::verify_config};
+    }
+
     static format get_for_mark(uint8_t mark) {
         if (mark == READABLE) {
             return get_readable();
         } else if (mark == CTX) {
             return get_ctx();
+        } else if (mark == TURBO) {
+            return get_turbo();
         }
-        throw std::runtime_error("Unknown format mark");
+        throw std::runtime_error(std::format("Unknown format mark: {}", (int)mark));
     }
 
     static format get_for_option(const std::string& option) {
@@ -428,6 +629,8 @@ struct format {
             return get_readable();
         } else if (option == "ctx") {
             return get_ctx();
+        } else if (option == "turbo") {
+            return get_turbo();
         }
         throw std::runtime_error("Unknown format option");
     }
