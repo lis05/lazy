@@ -1,4 +1,3 @@
-#!/bin/env python3
 import subprocess
 import filecmp
 import time
@@ -11,24 +10,22 @@ compressor = "./build/lazy"
 
 
 def encode(src, dest, args):
-    args_str = " ".join(map(str, args))
     try:
         subprocess.run(
-            [compressor, "-e", "-i", src, "-o", dest, *args], check=True
+            [compressor, "-e", "-i", src, "-o", dest] + args, check=True
         )
-    except:
-        print(f"Encode ({compressor} -e -i {src} -o {dest} {args_str}) failed.")
+    except subprocess.CalledProcessError:
+        print(f"Encode failed for {src} with args {args}")
         sys.exit(1)
 
 
 def decode(src, dest, args):
-    args_str = " ".join(map(str, args))
     try:
         subprocess.run(
-            [compressor, "-d", "-i", src, "-o", dest, *args], check=True
+            [compressor, "-d", "-i", src, "-o", dest] + args, check=True
         )
-    except:
-        print(f"Decode ({compressor} -d -i {src} -o {dest} {args_str}) failed.")
+    except subprocess.CalledProcessError:
+        print(f"Decode failed for {src} with args {args}")
         sys.exit(1)
 
 
@@ -39,11 +36,11 @@ def compare(src, dest):
 
 def gen_normal_tests():
     levels = ("-l", (0,))
-    formats = ("-f", ("ctx", "turbo",))
+    formats = ("-f", ("ctx", "turbo"))
     jobs = ("-j", (16,))
-    block_size = ("--bs", [1 << x for x in range(15, 21, 1)])
-    window_size = ("--ws", [1 << x for x in range(15, 21, 1)])
-    future_limit = ("--fl", [1 << x for x in range(15, 21, 1)])
+    block_size = ("--bs", [1 << x for x in range(15, 22, 1)])
+    window_size = ("--ws", [1 << x for x in range(15, 22, 1)])
+    future_limit = ("--fl", [1 << x for x in range(15, 22, 1)])
     max_matches = ("--mm", (10, 1000, 0))
     lazy_matching = ("--lm", (0, 1, 2, 3, 4))
 
@@ -62,17 +59,11 @@ def gen_normal_tests():
     value_lists = [item[1] for item in params]
 
     tests = []
-
     for combination in itertools.product(*value_lists):
         test = dict(zip(keys, combination))
-
-        if test[block_size[0]] < test[window_size[0]]:
+        if test["--bs"] < test["--ws"] or test["--bs"] < test["--fl"]:
             continue
-        if test[block_size[0]] < test[future_limit[0]]:
-            continue
-
-        tests += [test]
-
+        tests.append(test)
     return tests
 
 
@@ -82,17 +73,12 @@ def measure(fn, *args):
     return time.time() - before
 
 
-def run_test(file, test):
+def run_test(file, test, cmd_args):
     encoded = "/tmp/encoded_benchmark"
     decoded = "/tmp/decoded_benchmark"
 
-    stringified = " ".join(
-        f"{a} {b}" if not isinstance(b, bool) else (a if b else "")
-        for a, b in test.items()
-    )
-
-    enc_time = measure(encode, file, encoded, stringified.split())
-    dec_time = measure(decode, encoded, decoded, stringified.split())
+    enc_time = measure(encode, file, encoded, cmd_args)
+    dec_time = measure(decode, encoded, decoded, cmd_args)
     compare(file, decoded)
 
     orig = os.path.getsize(file)
@@ -126,7 +112,6 @@ def run_all_tests(folder, csv_filename):
         "filename", "orig_size", "enc_size", "ratio", "enc_time", "dec_time"
     ]
 
-    # 1. Load CSV into memory dict
     past_dict = {}
     if os.path.exists(csv_filename):
         try:
@@ -157,6 +142,14 @@ def run_all_tests(folder, csv_filename):
         for test in tests:
             config_tuple = tuple(str(test[k]) for k in config_keys)
             
+            # Pre-build argument list once per configuration to avoid repeated serialization
+            cmd_args = []
+            for a, b in test.items():
+                if not isinstance(b, bool):
+                    cmd_args.extend([a, str(b)])
+                elif b:
+                    cmd_args.append(a)
+
             orig_sum = 0.0
             enc_sum = 0.0
             enc_time_sum = 0.0
@@ -167,7 +160,6 @@ def run_all_tests(folder, csv_filename):
                 i += 1
                 lookup_key = (file, config_tuple)
                 
-                # 3. Check if test has been run via dict
                 if lookup_key in past_dict:
                     past_row = past_dict[lookup_key]
                     orig_sum += past_row["orig_size"]
@@ -177,7 +169,7 @@ def run_all_tests(folder, csv_filename):
                     count += 1
                 else:
                     print(f"[{i}/{total}] Running file: {file} | config: {test}")
-                    orig, enc, ratio, enc_time, dec_time = run_test(file, test)
+                    orig, enc, ratio, enc_time, dec_time = run_test(file, test, cmd_args)
 
                     orig_sum += orig
                     enc_sum += enc
@@ -195,8 +187,7 @@ def run_all_tests(folder, csv_filename):
 
                     writer.writerow(row)
                     f.flush()
-                    
-                    # 2. Add new test to dict
+
                     past_dict[lookup_key] = {
                         "orig_size": orig,
                         "enc_size": enc,
@@ -240,7 +231,4 @@ if __name__ == "__main__":
         print(f"Usage: {sys.argv[0]} <input_folder> <output_csv>")
         sys.exit(1)
 
-    input_folder = sys.argv[1]
-    output_csv = sys.argv[2]
-
-    run_all_tests(input_folder, output_csv)
+    run_all_tests(sys.argv[1], sys.argv[2])

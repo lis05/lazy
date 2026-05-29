@@ -32,14 +32,28 @@ public:
             return;
         }
 
+        static auto start_time = std::chrono::system_clock::now();
+
         do {
             using namespace std::chrono_literals;
             std::this_thread::sleep_for(1000ms);
-            std::cout << '\r'
-                      << "Progress: " << (100 * processed_bytes / total_bytes)
-                      << "% (" << processed_bytes << " / " << total_bytes << ")"
+            auto new_time = std::chrono::system_clock::now();
+            auto lifetime = std::chrono::duration_cast<std::chrono::seconds>(
+                new_time - start_time);
+
+            // Explicitly load the trivially copyable type from std::atomic
+            auto current_processed = processed_bytes.load();
+            auto totaltime = current_processed > 0
+                                 ? std::chrono::duration_cast<std::chrono::seconds>(
+                                       total_bytes * lifetime / current_processed)
+                                 : std::chrono::seconds(0);
+
+            std::cout << std::format("\rProgress: {}% ({} / {}, {}s / {}s)",
+                                     100 * current_processed / total_bytes,
+                                     current_processed, total_bytes,
+                                     lifetime.count(), totaltime.count())
                       << std::flush;
-        } while (processed_bytes != total_bytes);
+        } while (processed_bytes.load() < total_bytes);
         std::cout << std::endl;
     }
 
