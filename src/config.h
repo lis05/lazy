@@ -22,6 +22,8 @@ public:
     inline static bool     print_progress = false;
     inline static uint32_t lazy_matching = 1;
 
+    inline static size_t divisions = 1;
+
     inline static int level = 0;
 
     inline static std::atomic_uint64_t processed_bytes;

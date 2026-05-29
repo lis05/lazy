@@ -9,6 +9,7 @@
 #include "CLI11.h"
 #include "config.h"
 #include "decoder.h"
+#include "div_encoder.h"
 #include "encoder.h"
 #include "formats.h"
 #include "ioreader.h"
@@ -132,6 +133,10 @@ int main(int argc, char **argv) {
     app.add_option("--mm", config::max_matches, "Max matches before acceptation");
     app.add_option("--lm", config::lazy_matching,
                    "Bytes to skip during lazy matching");
+    app.add_option(
+        "-k", config::divisions,
+        "Number of workers to process a single block. If 1, uses the standard "
+        "encoder. If more, uses a different encoded that should work best with -j1");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -157,7 +162,11 @@ int main(int argc, char **argv) {
         config::processed_bytes = 0;
 
         auto printer = std::jthread{config::report_progress};
-        encode<encoder>(in, out, format_opt, print_total_tokens);
+        if (config::divisions == 1) {
+            encode<encoder>(in, out, format_opt, print_total_tokens);
+        } else {
+            encode<div_encoder>(in, out, format_opt, print_total_tokens);
+        }
     } else if (run_decoder) {
         decode(in, out);
     }
