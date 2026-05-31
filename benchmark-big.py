@@ -12,7 +12,7 @@ compressor = "./build/lazy"
 def encode(src, dest, args):
     try:
         subprocess.run(
-            [compressor, "-e", "-i", src, "-o", dest] + args, check=True
+            [compressor, "-e", "-i", src, "-o", dest, "-p"] + args, check=True
         )
     except subprocess.CalledProcessError:
         print(f"Encode failed for {src} with args {args}")
@@ -22,7 +22,7 @@ def encode(src, dest, args):
 def decode(src, dest, args):
     try:
         subprocess.run(
-            [compressor, "-d", "-i", src, "-o", dest] + args, check=True
+            [compressor, "-d", "-i", src, "-o", dest, "-p"] + args, check=True
         )
     except subprocess.CalledProcessError:
         print(f"Decode failed for {src} with args {args}")
@@ -36,14 +36,14 @@ def compare(src, dest):
 
 def gen_normal_tests():
     levels = ("-l", (0,))
-    formats = ("-f", ("ctx", "turbo", "turbo2"))
-    jobs = ("-j", (16,))
-    divisions = ("-k", (1,))
-    block_size = ("--bs", [1 << x for x in range(16, 21, 2)])
-    window_size = ("--ws", [1 << x for x in range(16, 21, 2)])
-    future_limit = ("--fl", [1 << x for x in range(16, 21, 2)])
-    max_matches = ("--mm", (10, 1000, 0))
-    lazy_matching = ("--lm", (0, 1, 2, 3,))
+    formats = ("-f", ("turbo2",))
+    jobs = ("-j", (16, 8, 4, 2, 1))
+    divisions = ("-k", (1, 2, 4, 8, 16,))
+    block_size = ("--bs", [1 << x for x in [22, 23, 24, 25, 27]])
+    window_size = ("--ws", block_size[1])
+    future_limit = ("--fl", block_size[1])
+    max_matches = ("--mm", (0,))
+    lazy_matching = ("--lm", (1, 2,))
 
     params = [
         levels,
@@ -63,7 +63,9 @@ def gen_normal_tests():
     tests = []
     for combination in itertools.product(*value_lists):
         test = dict(zip(keys, combination))
-        if test["--bs"] < test["--ws"] or test["--bs"] < test["--fl"]:
+        if test["--bs"] != test["--ws"] or test["--bs"] != test["--fl"]:
+            continue
+        if test["-j"] * test["-k"] < 8 or (test["-k"] == 1 and test["-j"] != 16):
             continue
         tests.append(test)
     return tests
@@ -73,7 +75,6 @@ def measure(fn, *args):
     before = time.time()
     fn(*args)
     return time.time() - before
-
 
 def run_test(file, test, cmd_args):
     encoded = "/tmp/encoded_benchmark"

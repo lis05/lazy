@@ -42,7 +42,10 @@ if __name__ == "__main__":
         print(f"Usage: {sys.argv[0]} <results.csv>")
         sys.exit(1)
 
-    df = load_data(sys.argv[1])
+    global CSV_PATH
+    CSV_PATH = sys.argv[1]
+    
+    df = load_data(CSV_PATH)
 
     metrics = ["ratio", "enc_time", "log_enc_time", "dec_time", "enc_size", "orig_size"]
     ignore_cols = metrics + ["filename"]
@@ -59,6 +62,11 @@ if __name__ == "__main__":
 
     app.layout = html.Div(
         [
+            dcc.Interval(
+                id="interval-component",
+                interval=10000, 
+                n_intervals=0
+            ),
             dcc.Download(id="download-pareto-csv"),
             html.H2(
                 "Interactive LZ77 Benchmark Explorer",
@@ -196,8 +204,10 @@ if __name__ == "__main__":
         Input("y-axis", "value"),
         Input("color-axis", "value"),
         Input("dataset-filter", "value"),
+        Input("interval-component", "n_intervals")
     )
-    def update_dashboard(x_col, y_col, color_col, selected_datasets):
+    def update_dashboard(x_col, y_col, color_col, selected_datasets, n_intervals):
+        df = load_data(CSV_PATH)
         filtered_df = df[df["filename"].isin(selected_datasets)]
 
         if filtered_df.empty:
@@ -322,6 +332,7 @@ if __name__ == "__main__":
         if not n_clicks:
             return None
 
+        df = load_data(CSV_PATH)
         filtered_df = df[df["filename"].isin(selected_datasets)]
         pareto_conditions = (x_col == "log_enc_time" and y_col == "ratio") or (
             x_col == "ratio" and y_col == "log_enc_time"
@@ -346,4 +357,3 @@ if __name__ == "__main__":
 
     print("Starting dashboard server at http://127.0.0.1:8050/")
     app.run(debug=False)
-
