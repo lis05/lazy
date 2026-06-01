@@ -73,10 +73,10 @@ private:
 
         auto it_index = it - positions.begin();
         if (it_index == 0) {
-            return; // no previous hashes yet
+            return;  // no previous hashes yet
         }
         auto workers = std::min((long int)config::divisions, it_index / 8);
-        if (it_index <= 0) {
+        if (workers <= 0) {
             workers = 1;
         }
 

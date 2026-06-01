@@ -69,18 +69,10 @@ public:
         std::fill(prev.begin(), prev.end(), NONE);
 
         auto calculate_hashes = [this]() {
-            if (config::prefix_size == 3) {
-                for (size_t i = 0; i + 2 < bytes_loaded; i++) {
-                    auto h = hashes::hash3(data.data() + i);
-                    prev[i] = head[h];
-                    head[h] = i;
-                }
-            } else if (config::prefix_size == 2) {
-                for (size_t i = 0; i + 1 < bytes_loaded; i++) {
-                    auto h = hashes::hash2(data.data() + i);
-                    prev[i] = head[h];
-                    head[h] = i;
-                }
+            for (size_t i = 0; i + 2 < bytes_loaded; i++) {
+                auto h = hashes::hash3(data.data() + i);
+                prev[i] = head[h];
+                head[h] = i;
             }
         };
         calculate_hashes();
