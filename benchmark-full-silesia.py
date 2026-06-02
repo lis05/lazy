@@ -37,13 +37,13 @@ def compare(src, dest):
 def gen_normal_tests():
     levels = ("-l", (0,))
     formats = ("-f", ("turbo2",))
-    jobs = ("-j", (16, 8, 4, 2, 1))
-    divisions = ("-k", (1, 2, 4, 8, 16,))
-    block_size = ("--bs", [1 << x for x in [22, 23, 24, 25,]])
+    jobs = ("-j", (1,))
+    divisions = ("-k", (8,))
+    block_size = ("--bs", [1 << 28])
     window_size = ("--ws", block_size[1])
     future_limit = ("--fl", block_size[1])
     max_matches = ("--mm", (0,))
-    lazy_matching = ("--lm", (1, 2,))
+    lazy_matching = ("--lm", (2,))
 
     params = [
         levels,
