@@ -9,63 +9,27 @@
 
 class config {
 public:
-    inline static size_t block_size = 1 << 20;
-    inline static size_t window_size = 1 << 16;
-    inline static size_t future_limit = 1 << 12;
-    inline static size_t prefix_size = 3;
-    inline static size_t total_hashes() {
+    static size_t block_size;
+    static size_t window_size;
+    static size_t future_limit;
+    static size_t prefix_size;
+    static size_t total_hashes() {
         return 1 << (8 * prefix_size);
     }
-    inline static uint64_t max_matches = 0;
-    inline static size_t   jobs = 1;
-    inline static size_t   blocks = 1;
-    inline static bool     print_progress = false;
-    inline static uint32_t lazy_matching = 1;
+    static uint64_t    max_matches;
+    static size_t      jobs;
+    static size_t      blocks;
+    static bool        print_progress;
+    static uint32_t    lazy_matching;
+    static size_t      divisions;
+    static std::string format;
 
-    inline static size_t divisions = 1;
+    static int level;
 
-    inline static int level = 0;
+    static std::atomic_uint64_t processed_bytes;
+    static uint64_t             total_bytes;
 
-    inline static std::atomic_uint64_t processed_bytes;
-    inline static uint64_t             total_bytes;
-
-    static void report_progress() {
-        if (!print_progress) {
-            return;
-        }
-
-        static auto start_time = std::chrono::system_clock::now();
-
-        do {
-            using namespace std::chrono_literals;
-            std::this_thread::sleep_for(1000ms);
-            auto new_time = std::chrono::system_clock::now();
-            auto lifetime = std::chrono::duration_cast<std::chrono::seconds>(
-                new_time - start_time);
-
-            // Explicitly load the trivially copyable type from std::atomic
-            auto current_processed = processed_bytes.load();
-            auto totaltime = current_processed > 0
-                                 ? std::chrono::duration_cast<std::chrono::seconds>(
-                                       total_bytes * lifetime / current_processed)
-                                 : std::chrono::seconds(0);
-
-            std::cout << std::format("\rProgress: {}% ({} / {}, {}s / {}s)",
-                                     100 * current_processed / total_bytes,
-                                     current_processed, total_bytes,
-                                     lifetime.count(), totaltime.count())
-                      << std::flush;
-        } while (processed_bytes.load() < total_bytes);
-        std::cout << std::endl;
-    }
-
-    static void apply_level(int l, size_t file_size) {
-        auto cores = static_cast<size_t>(std::thread::hardware_concurrency());
-
-        if (l == 0) {
-            return;
-        } else {
-            return;
-        }
-    }
+    static void print();
+    static void report_progress();
+    static void apply_level(int l, size_t file_size);
 };

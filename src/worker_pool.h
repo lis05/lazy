@@ -15,38 +15,9 @@ class worker_pool {
     bool                              stop = false;
 
 public:
-    worker_pool(size_t threads) {
-        for (size_t i = 0; i < threads; i++) {
-            workers.emplace_back([this](std::stop_token st) {
-                while (!st.stop_requested()) {
-                    std::function<void()> task;
-                    {
-                        std::unique_lock lock(queue_mutex);
-                        cv.wait(lock, st, [this] { return stop || !tasks.empty(); });
-                        if (stop && tasks.empty())
-                            return;
-                        task = std::move(tasks.front());
-                        tasks.pop();
-                    }
-                    task();
-                }
-            });
-        }
-    }
+    worker_pool(size_t threads);
 
-    void enqueue(std::function<void()> task) {
-        {
-            std::lock_guard lock(queue_mutex);
-            tasks.push(std::move(task));
-        }
-        cv.notify_one();
-    }
+    void enqueue(std::function<void()> task);
 
-    ~worker_pool() {
-        {
-            std::lock_guard lock(queue_mutex);
-            stop = true;
-        }
-        cv.notify_all();
-    }
+    ~worker_pool();
 };

@@ -3,13 +3,10 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <format>
 #include <stdexcept>
 #include <vector>
-
-extern "C" {
-int verbose;
-}
 
 namespace turborc {
 extern "C" {

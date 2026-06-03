@@ -1,3 +1,5 @@
+MAKEFLAGS := --jobs=$(shell nproc)
+
 CXX=g++
 CC=gcc
 LD=g++

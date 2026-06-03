@@ -1,4 +1,5 @@
 #pragma once
+#include <cassert>
 #include <concepts>
 #include <iostream>
 
@@ -76,4 +77,3 @@ public:
         return value;
     }
 };
-

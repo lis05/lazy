@@ -17,9 +17,13 @@
 #include "token.h"
 #include "worker_pool.h"
 
+extern "C" {
+int verbose;
+}
+
 template <typename Encoder>
-static void encode(auto &in, auto &out, auto format_opt, auto print_total_tokens) {
-    auto format = formats::format::get_for_option(format_opt);
+static void encode(auto &in, auto &out, auto print_total_tokens) {
+    auto format = formats::format::get_for_option(config::format);
     format.verify_config();
 
     auto   pool = worker_pool{config::jobs};
@@ -116,13 +120,15 @@ int main(int argc, char **argv) {
 
     app.add_flag("-p", config::print_progress, "Print progress");
 
+    bool print_config = false;
+    app.add_flag("-c", print_config, "Print config and exit");
+
     app.add_option("-l", config::level,
                    "Compression level (-1 = allow individual parameters, 1 = "
                    "fastest(default), 12 = very good compression in reasonable "
                    "time, 13-15 = best compression in unreasonably big time");
 
-    std::string format_opt = "ctx";
-    app.add_option("-f", format_opt,
+    app.add_option("-f", config::format,
                    "Output format (if encoding): readable, ctx(default)");
     app.add_option("-j", config::jobs, "Number of encoders to work in parallel");
     app.add_option("-b", config::blocks,
@@ -154,6 +160,10 @@ int main(int argc, char **argv) {
 
     config::apply_level(config::level, std::filesystem::file_size(
                                            std::filesystem::path{input_file}));
+    if (print_config) {
+        config::print();
+        return 0;
+    }
 
     auto start_time = std::chrono::high_resolution_clock::now();
     if (run_encoder) {
@@ -163,9 +173,9 @@ int main(int argc, char **argv) {
 
         auto printer = std::jthread{config::report_progress};
         if (config::divisions == 1) {
-            encode<encoder>(in, out, format_opt, print_total_tokens);
+            encode<encoder>(in, out, print_total_tokens);
         } else {
-            encode<div_encoder>(in, out, format_opt, print_total_tokens);
+            encode<div_encoder>(in, out, print_total_tokens);
         }
     } else if (run_decoder) {
         decode(in, out);
