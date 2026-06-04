@@ -22,6 +22,7 @@ public:
     static bool        print_progress;
     static uint32_t    lazy_matching;
     static size_t      divisions;
+    static size_t      max_prefix_lengths;
     static std::string format;
 
     static int level;

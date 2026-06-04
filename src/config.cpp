@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include <sys/resource.h>
+
 size_t   config::block_size = 1 << 20;
 size_t   config::window_size = 1 << 16;
 size_t   config::future_limit = 1 << 12;
@@ -9,8 +11,8 @@ size_t   config::jobs = 1;
 size_t   config::blocks = 1;
 bool     config::print_progress = false;
 uint32_t config::lazy_matching = 1;
-
-size_t config::divisions = 1;
+size_t   config::divisions = 1;
+size_t   config::max_prefix_lengths = 1;
 
 std::string config::format = "ctx";
 
@@ -30,11 +32,24 @@ void config::print() {
                      "blocks: {}\n"
                      "lazy_matching: {}\n"
                      "divisions: {}\n"
+                     "max_prefix_lengths: {}\n"
                      "format: {}\n"
                      "level: {}",
                      block_size, window_size, future_limit, prefix_size, max_matches,
-                     jobs, blocks, lazy_matching, divisions, format, level)
+                     jobs, blocks, lazy_matching, divisions, max_prefix_lengths,
+                     format, level)
               << std::endl;
+}
+
+static auto get_mb() {
+    struct rusage usage;
+    getrusage(RUSAGE_SELF, &usage);
+// ru_maxrss is in kilobytes on Linux, but bytes on macOS
+#ifdef __apple_build_version__
+    return usage.ru_maxrss / (1024 * 1024)
+#else
+    return usage.ru_maxrss / 1024;
+#endif
 }
 
 void config::report_progress() {
@@ -58,10 +73,10 @@ void config::report_progress() {
                                    total_bytes * lifetime / current_processed)
                              : std::chrono::seconds(0);
 
-        std::cout << std::format("\rProgress: {}% ({} / {}, {}s / {}s)",
+        std::cout << std::format("\rProgress: {}% ({} / {}, {}s / {}s, RSS {}MB)",
                                  100 * current_processed / total_bytes,
                                  current_processed, total_bytes, lifetime.count(),
-                                 totaltime.count())
+                                 totaltime.count(), get_mb())
                   << std::flush;
     } while (processed_bytes.load() < total_bytes);
     std::cout << std::endl;

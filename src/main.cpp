@@ -14,6 +14,7 @@
 #include "formats.h"
 #include "ioreader.h"
 #include "iowriter.h"
+#include "mp_encoder.h"
 #include "token.h"
 #include "worker_pool.h"
 
@@ -142,7 +143,11 @@ int main(int argc, char **argv) {
     app.add_option(
         "-k", config::divisions,
         "Number of workers to process a single block. If 1, uses the standard "
-        "encoder. If more, uses a different encoded that should work best with -j1");
+        "encoder. If more, uses a different encoded that works best on big blocks");
+    app.add_option(
+        "--mpl", config::max_prefix_lengths,
+        "How many prefix lengths to check. If 1, uses the standard encoder. If "
+        "more, uses a different encoder that should be faster");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -164,6 +169,11 @@ int main(int argc, char **argv) {
         config::print();
         return 0;
     }
+    if (config::max_prefix_lengths > mp_encoder::sizes.size()) {
+        throw std::runtime_error(
+            std::format("Too many prefix lengths: {}. Can only handle {}",
+                        config::max_prefix_lengths, mp_encoder::sizes.size()));
+    }
 
     auto start_time = std::chrono::high_resolution_clock::now();
     if (run_encoder) {
@@ -172,7 +182,9 @@ int main(int argc, char **argv) {
         config::processed_bytes = 0;
 
         auto printer = std::jthread{config::report_progress};
-        if (config::divisions == 1) {
+        if (config::max_prefix_lengths != 1) {
+            encode<mp_encoder>(in, out, print_total_tokens);
+        } else if (config::divisions == 1) {
             encode<encoder>(in, out, print_total_tokens);
         } else {
             encode<div_encoder>(in, out, print_total_tokens);
