@@ -197,9 +197,9 @@ void write_block(const std::vector<token>& tokens, std::ostream& out) {
     std::vector<std::byte> out_len;
     std::vector<std::byte> out_lit;
 
-    ::turborc::compress<::turborc::rcmrrsenc>(dist_ctx, out_dist);
-    ::turborc::compress<::turborc::rcmrrsenc>(len_ctx, out_len);
-    ::turborc::compress<::turborc::rcmrrsenc>(literals, out_lit);
+    ::turborc::compress<::turborc::rcmrrssenc, std::byte, 4, 7>(dist_ctx, out_dist);
+    ::turborc::compress<::turborc::rcmrrssenc, std::byte, 4, 7>(len_ctx, out_len);
+    ::turborc::compress<::turborc::rcmrrssenc, std::byte, 4, 7>(literals, out_lit);
     header.bytes_dist_ctx = out_dist.size();
     header.bytes_len_ctx = out_len.size();
     header.bytes_lit_ctx = out_lit.size();
@@ -249,9 +249,9 @@ std::vector<token> read_block(std::istream& in) {
     std::vector<std::byte> len_ctx(h.n_len_ctx);
     std::vector<std::byte> literals(h.n_lit_ctx);
 
-    ::turborc::decompress<::turborc::rcmrrsdec>(out_dist, dist_ctx);
-    ::turborc::decompress<::turborc::rcmrrsdec>(out_len, len_ctx);
-    ::turborc::decompress<::turborc::rcmrrsdec>(out_lit, literals);
+    ::turborc::decompress<::turborc::rcmrrssdec, std::byte, 4, 7>(out_dist, dist_ctx);
+    ::turborc::decompress<::turborc::rcmrrssdec, std::byte, 4, 7>(out_len, len_ctx);
+    ::turborc::decompress<::turborc::rcmrrssdec, std::byte, 4, 7>(out_lit, literals);
 
     std::vector<std::byte> extra(h.bytes_extra);
     in.read(reinterpret_cast<char*>(extra.data()), h.bytes_extra);

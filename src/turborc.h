@@ -19,7 +19,7 @@ extern "C" {
 constexpr static std::byte YES_COPY{0};
 constexpr static std::byte NO_COPY{1};
 
-template <auto Enc, typename B>
+template <auto Enc, typename B, size_t... Params>
 static inline void compress(const std::vector<B>   &src,
                             std::vector<std::byte> &dest) {
     auto *enc = Enc;
@@ -31,9 +31,10 @@ static inline void compress(const std::vector<B>   &src,
     size_t bytes = src.size() * sizeof(B);
 
     dest.resize(bytes);
-    size_t count = enc(const_cast<unsigned char *>(
-                           reinterpret_cast<const unsigned char *>(src.data())),
-                       bytes, reinterpret_cast<unsigned char *>(dest.data()));
+    size_t count =
+        enc(const_cast<unsigned char *>(
+                reinterpret_cast<const unsigned char *>(src.data())),
+            bytes, reinterpret_cast<unsigned char *>(dest.data()), Params...);
     if (count == bytes) {
         dest.insert(dest.begin(), YES_COPY);
     } else {
@@ -42,7 +43,7 @@ static inline void compress(const std::vector<B>   &src,
     dest.resize(count + 1);
 }
 
-template <auto Dec, typename B>
+template <auto Dec, typename B, size_t... Params>
 static inline void decompress(const std::vector<std::byte> &src,
                               std::vector<B>               &dest) {
     auto *dec = Dec;
@@ -56,10 +57,11 @@ static inline void decompress(const std::vector<std::byte> &src,
         dest.resize((src.size() - 1) / sizeof(B));
         std::memcpy(dest.data(), src.data() + 1, src.size() - 1);
     } else {
-        size_t count = dec(
-            const_cast<unsigned char *>(
-                reinterpret_cast<const unsigned char *>(src.data() + 1)),
-            dest.size() * sizeof(B), reinterpret_cast<unsigned char *>(dest.data()));
+        size_t count =
+            dec(const_cast<unsigned char *>(
+                    reinterpret_cast<const unsigned char *>(src.data() + 1)),
+                dest.size() * sizeof(B),
+                reinterpret_cast<unsigned char *>(dest.data()), Params...);
         dest.resize(count / sizeof(B));
     }
 }

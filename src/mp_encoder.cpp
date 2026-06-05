@@ -1,7 +1,7 @@
 #include "mp_encoder.h"
 
 mp_encoder::mp_encoder()
-    : bytes_loaded(0), data(config::block_size), tokens(), head(), prev() {
+    : bytes_loaded(0), data(config::block_size), tokens(), head(1), prev() {
 }
 
 std::pair<std::byte *, size_t &> mp_encoder::for_loading() {
@@ -35,7 +35,7 @@ void mp_encoder::process(auto future_limit, const auto NONE, auto i,
             }
         }
 
-        if (best_match_len >= prefix_len / 2) {
+        if (best_match_len >= prefix_len) {
             break;
         }
     }
@@ -44,26 +44,30 @@ void mp_encoder::process(auto future_limit, const auto NONE, auto i,
 std::vector<token> mp_encoder::encode() {
     constexpr auto NONE = std::numeric_limits<uint32_t>::max();
 
+    size_t bits =
+        std::min(size_t{30}, 8 * sizeof(size_t) - std::countl_zero(bytes_loaded));
     prev.resize(config::max_prefix_lengths);
-    head.clear();
+    head = table{bits};
 
-    for (size_t len = 0; len < config::max_prefix_lengths; len++) {
+    for (int len = config::max_prefix_lengths - 1; len >= 0; len--) {
         const auto prefix_len = sizes[len];
+        std::cerr << "Processing prefix_len=" << prefix_len << "\n";
 
         auto &pr = prev[len];
         pr.reserve(bytes_loaded - prefix_len + 1);
         for (size_t i = 0; i + prefix_len < bytes_loaded + 1; i++) {
             auto h = hashes::hashn(data.data() + i, prefix_len);
-            if (head.find(h) == head.end()) {
+            if (!head.has(h)) {
                 pr.push_back(NONE);
             } else {
-                pr.push_back(head[h]);
+                pr.push_back(head.get(h));
             }
-            head[h] = i;
+            head.insert(h, i);
         }
 
         head.clear();
     }
+    head.destroy();
 
     for (uint32_t i = 0; i < bytes_loaded;) {
         auto old_i = i;
@@ -189,5 +193,35 @@ std::vector<token> mp_encoder::encode() {
 
         config::processed_bytes += i - old_i;
     }
+
+#if 0
+    size_t lits = 0;
+    std::map<uint32_t, size_t> len;
+    std::map<uint32_t, size_t> dist;
+    for (auto &t: tokens) {
+        if (std::holds_alternative<match>(t)) {
+            auto [d, l] = std::get<match>(t);
+            len[l]++;
+            dist[d]++;
+        }
+        else {
+            lits++;
+        }
+    }
+
+    std::cerr << "Lits: " << lits << "\n";
+    int total = 1000;
+    for (auto [l, cnt]: len) {
+        total--;
+        if (total < 0) break;
+        std::cerr << "  len " << l << " cnt " << cnt << "\n";
+    }
+    total = 1000;
+    for (auto [l, cnt]: dist) {
+        total--;
+        if (total < 0) break;
+        std::cerr << "  dist " << l << " cnt " << cnt << "\n";
+    }
+#endif
     return tokens;
 }

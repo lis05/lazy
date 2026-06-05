@@ -46,9 +46,9 @@ static auto get_mb() {
     getrusage(RUSAGE_SELF, &usage);
 // ru_maxrss is in kilobytes on Linux, but bytes on macOS
 #ifdef __apple_build_version__
-    return usage.ru_maxrss / (1024 * 1024)
+    return usage.ru_maxrss / 1000000;
 #else
-    return usage.ru_maxrss / 1024;
+    return usage.ru_maxrss / 1000;
 #endif
 }
 
