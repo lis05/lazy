@@ -1,0 +1,173 @@
+// src/mpo_encoder.cpp
+#include "mpo_encoder.h"
+#include <iostream>
+
+mpo_encoder::mpo_encoder()
+    : bytes_loaded(0),
+      data(config::block_size),
+      tokens(),
+      prev(),
+      dp_cost(),
+      dp_from() {
+}
+
+std::pair<std::byte *, size_t &> mpo_encoder::for_loading() {
+    return {data.data(), bytes_loaded};
+}
+
+void mpo_encoder::process(auto future_limit, const auto NONE, auto i,
+                          auto &best_match_len, auto &best_match_pos, table &active_head) {
+    best_match_len = 1;
+    best_match_pos = NONE;
+
+    const auto *data_buf = data.data();
+
+    for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
+        const auto prefix_len = config::prefix_lengths[len];
+        if (prefix_len > future_limit) {
+            continue;
+        }
+
+        auto h = hashes::hashn(data_buf + i, prefix_len);
+        if (!active_head.has(h)) {
+            continue;
+        }
+
+        uint32_t pos = active_head.get(h);
+        const auto *prev_buf = prev[len].data();
+        uint64_t count = config::max_matches;
+
+        for (; pos != NONE && pos + config::window_size >= i && --count > 0;
+             pos = prev_buf[f(pos)]) {
+            if (pos >= i) {
+                continue;
+            }
+            uint32_t match_len = strmatch::match_simd_loop(
+                future_limit, data_buf + pos, data_buf + i);
+            if (match_len >= prefix_len && match_len > best_match_len) {
+                best_match_len = match_len;
+                best_match_pos = pos;
+            }
+        }
+
+        if (best_match_len >= prefix_len) {
+            break;
+        }
+    }
+}
+
+std::vector<token> mpo_encoder::encode() {
+    constexpr auto INF = std::numeric_limits<uint64_t>::max();
+    constexpr auto NONE = std::numeric_limits<uint32_t>::max();
+
+    size_t bits =
+        std::min(size_t{30}, 8 * sizeof(size_t) - std::countl_zero(bytes_loaded));
+
+    prev.resize(config::prefix_lengths.size());
+    
+    table head_pre{bits};
+
+    dp_from.resize(bytes_loaded + 1, NONE);
+    dp_cost.resize(bytes_loaded + 1, INF);
+    std::vector<uint32_t> dp_match_pos(bytes_loaded + 1, NONE);
+    dp_from[0] = 0;
+    dp_cost[0] = 0;
+
+    for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
+        const auto prefix_len = config::prefix_lengths[len];
+        std::cerr << "Processing prefix_len=" << prefix_len << "\n";
+
+        if (bytes_loaded < prefix_len) {
+            throw std::runtime_error("Cannot compress");
+        }
+
+        auto &pr = prev[len];
+        pr.assign(f(bytes_loaded) + 1, NONE);
+        for (size_t i = 0; i + prefix_len < bytes_loaded + 1; i++) {
+            if (is_selected(i)) {
+                auto h = hashes::hashn(data.data() + i, prefix_len);
+                if (!head_pre.has(h)) {
+                    pr[f(i)] = NONE;
+                } else {
+                    pr[f(i)] = head_pre.get(h);
+                }
+                head_pre.insert(h, i);
+            }
+        }
+        std::cerr << "Cleaning...\n";
+        head_pre.clear();
+    }
+    std::cerr << "Deallocating head...\n";
+    head_pre.destroy();
+
+    table active_head{bits};
+
+    std::cerr << "Entering loop...\n";
+    for (uint32_t i = 0; i < bytes_loaded; i++) {
+        config::processed_bytes++;
+
+        auto cur_dp_cost = dp_cost[i];
+        auto future_limit = std::min(bytes_loaded - i, config::future_limit);
+
+        uint32_t best_match_len, best_match_pos;
+        process(future_limit, NONE, i, best_match_len, best_match_pos, active_head);
+
+        if (is_selected(i)) {
+            for (size_t len = 0; len < config::prefix_lengths.size(); len++) {
+                if (i + config::prefix_lengths[len] <= bytes_loaded) {
+                    auto h = hashes::hashn(data.data() + i, config::prefix_lengths[len]);
+                    active_head.insert(h, i);
+                }
+            }
+        }
+
+        uint64_t edge_cost = best_match_len == 1
+                                 ? INF
+                                 : estimate_cost(i - best_match_pos, best_match_len);
+        // edge
+        if (edge_cost < 1ll * literal_cost * best_match_len) {
+            uint64_t new_cost = cur_dp_cost + edge_cost;
+            if (dp_cost[i + best_match_len] > new_cost) {
+                dp_cost[i + best_match_len] = new_cost;
+                dp_from[i + best_match_len] = i;
+                dp_match_pos[i + best_match_len] = best_match_pos;
+            }
+        }
+
+        // literal
+        if (i + 1 <= bytes_loaded) {
+            uint64_t new_cost = cur_dp_cost + literal_cost;
+            if (dp_cost[i + 1] > new_cost) {
+                dp_cost[i + 1] = new_cost;
+                dp_from[i + 1] = i;
+            }
+        }
+    }
+
+    uint32_t i = bytes_loaded;
+    while (i > 0) {
+        if (dp_cost[i] == INF) {
+            throw std::runtime_error(
+                std::format("Optimal encoder has failed at {}", i));
+        }
+
+        uint32_t came_from = dp_from[i];
+        if (came_from + 1 == i) {
+            tokens.push_back(data[came_from]);
+            i = came_from;
+            continue;
+        }
+
+        // edge
+        uint32_t best_match_pos = dp_match_pos[i];
+        uint32_t best_match_len = i - came_from;
+
+        tokens.push_back(match{came_from - best_match_pos, best_match_len});
+        i = came_from;
+    }
+
+    active_head.destroy();
+    std::reverse(tokens.begin(), tokens.end());
+
+    return tokens;
+}
