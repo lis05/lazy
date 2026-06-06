@@ -35,7 +35,7 @@ void mpo_encoder::process(auto future_limit, const auto NONE, auto i,
              pos = prev_buf[pos]) {
             uint32_t match_len = strmatch::match_simd_loop(
                 future_limit, data_buf + pos, data_buf + i);
-            if (match_len > best_match_len) {
+            if (match_len >= prefix_len && match_len > best_match_len) {
                 best_match_len = match_len;
                 best_match_pos = pos;
             }

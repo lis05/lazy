@@ -46,40 +46,54 @@ void config::print() {
 static auto get_mb() {
     struct rusage usage;
     getrusage(RUSAGE_SELF, &usage);
-// ru_maxrss is in kilobytes on Linux, but bytes on macOS
-#ifdef __apple_build_version__
-    return usage.ru_maxrss / 1000000;
+#ifdef __APPLE__
+    // macOS: bytes
+    return usage.ru_maxrss / (1024 * 1024);
 #else
-    return usage.ru_maxrss / 1000;
+    // Linux: kilobytes
+    return usage.ru_maxrss / 1024;
 #endif
 }
 
 void config::report_progress() {
-    if (!print_progress) {
+    if (!print_progress)
         return;
-    }
 
-    auto start_time = std::chrono::system_clock::now();
+    auto         start_time = std::chrono::system_clock::now();
+    double       smoothed_rate = 0.0;
+    const double alpha = 0.2;
 
     do {
         using namespace std::chrono_literals;
         std::this_thread::sleep_for(1000ms);
-        auto new_time = std::chrono::system_clock::now();
-        auto lifetime =
-            std::chrono::duration_cast<std::chrono::seconds>(new_time - start_time);
 
-        // Explicitly load the trivially copyable type from std::atomic
+        auto now = std::chrono::system_clock::now();
+        auto elapsed =
+            std::chrono::duration_cast<std::chrono::seconds>(now - start_time)
+                .count();
         auto current_processed = processed_bytes.load();
-        auto totaltime = current_processed > 0
-                             ? std::chrono::duration_cast<std::chrono::seconds>(
-                                   total_bytes * lifetime / current_processed)
-                             : std::chrono::seconds(0);
 
-        std::cout << std::format("\rProgress: {}% ({} / {}, {}s / {}s, RSS {}MB)",
-                                 100 * current_processed / total_bytes,
-                                 current_processed, total_bytes, lifetime.count(),
-                                 totaltime.count(), get_mb())
+        if (elapsed > 0 && current_processed > 0) {
+            double current_rate = static_cast<double>(current_processed) / elapsed;
+            smoothed_rate =
+                (smoothed_rate == 0.0)
+                    ? current_rate
+                    : (alpha * current_rate + (1.0 - alpha) * smoothed_rate);
+        }
+
+        auto remaining_bytes = total_bytes - current_processed;
+        auto eta = (smoothed_rate > 0)
+                       ? static_cast<int64_t>(remaining_bytes / smoothed_rate)
+                       : 0;
+        auto total_estimated = elapsed + eta;
+
+        std::cout << std::format(
+                         "\rProgress: {}% ({} / {}, Elapsed: {}s, Total Est: {}s, "
+                         "RSS: {}MB)",
+                         100 * current_processed / total_bytes, current_processed,
+                         total_bytes, elapsed, total_estimated, get_mb())
                   << std::flush;
+
     } while (processed_bytes.load() < total_bytes);
     std::cout << std::endl;
 }
