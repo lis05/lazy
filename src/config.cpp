@@ -2,17 +2,18 @@
 
 #include <sys/resource.h>
 
-size_t   config::block_size = 1 << 20;
-size_t   config::window_size = 1 << 16;
-size_t   config::future_limit = 1 << 12;
-size_t   config::prefix_size = 3;
-uint64_t config::max_matches = 0;
-size_t   config::jobs = 1;
-size_t   config::blocks = 1;
-bool     config::print_progress = false;
-uint32_t config::lazy_matching = 1;
-size_t   config::divisions = 1;
-size_t   config::max_prefix_lengths = 1;
+size_t              config::block_size = 1 << 20;
+size_t              config::window_size = 1 << 16;
+size_t              config::future_limit = 1 << 12;
+size_t              config::prefix_size = 3;
+uint64_t            config::max_matches = 0;
+size_t              config::jobs = 1;
+size_t              config::blocks = 1;
+bool                config::print_progress = false;
+uint32_t            config::lazy_matching = 1;
+size_t              config::divisions = 1;
+std::vector<size_t> config::prefix_lengths{};
+bool                config::optimal_encoder = false;
 
 std::string config::format = "ctx";
 
@@ -32,12 +33,13 @@ void config::print() {
                      "blocks: {}\n"
                      "lazy_matching: {}\n"
                      "divisions: {}\n"
-                     "max_prefix_lengths: {}\n"
+                     "prefix_lengths: {}\n"
+                     "optimal_encoder: {}\n"
                      "format: {}\n"
                      "level: {}",
                      block_size, window_size, future_limit, prefix_size, max_matches,
-                     jobs, blocks, lazy_matching, divisions, max_prefix_lengths,
-                     format, level)
+                     jobs, blocks, lazy_matching, divisions, prefix_lengths,
+                     optimal_encoder, format, level)
               << std::endl;
 }
 

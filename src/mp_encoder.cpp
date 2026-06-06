@@ -15,8 +15,8 @@ void mp_encoder::process(auto future_limit, const auto NONE, auto i,
 
     const auto &data_buf = data.data();
 
-    for (int len = config::max_prefix_lengths - 1; len >= 0; len--) {
-        const auto prefix_len = sizes[len];
+    for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
+        const auto prefix_len = config::prefix_lengths[len];
         if (prefix_len > future_limit || i + prefix_len >= prev[len].size()) {
             continue;
         }
@@ -46,11 +46,11 @@ std::vector<token> mp_encoder::encode() {
 
     size_t bits =
         std::min(size_t{30}, 8 * sizeof(size_t) - std::countl_zero(bytes_loaded));
-    prev.resize(config::max_prefix_lengths);
+    prev.resize(config::prefix_lengths.size());
     head = table{bits};
 
-    for (int len = config::max_prefix_lengths - 1; len >= 0; len--) {
-        const auto prefix_len = sizes[len];
+    for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
+        const auto prefix_len = config::prefix_lengths[len];
         std::cerr << "Processing prefix_len=" << prefix_len << "\n";
 
         auto &pr = prev[len];

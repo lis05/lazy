@@ -15,6 +15,7 @@ struct header {
     uint32_t bytes_lit;
     uint32_t bytes_dist;
     uint32_t bytes_len;
+    uint32_t bytes_extra_dist;
 
     friend std::istream& operator>>(std::istream& in, header& h);
     friend std::ostream& operator<<(std::ostream& out, const header& h);

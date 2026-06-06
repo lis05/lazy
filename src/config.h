@@ -16,14 +16,15 @@ public:
     static size_t total_hashes() {
         return 1 << (8 * prefix_size);
     }
-    static uint64_t    max_matches;
-    static size_t      jobs;
-    static size_t      blocks;
-    static bool        print_progress;
-    static uint32_t    lazy_matching;
-    static size_t      divisions;
-    static size_t      max_prefix_lengths;
-    static std::string format;
+    static uint64_t            max_matches;
+    static size_t              jobs;
+    static size_t              blocks;
+    static bool                print_progress;
+    static uint32_t            lazy_matching;
+    static size_t              divisions;
+    static std::vector<size_t> prefix_lengths;
+    static bool                optimal_encoder;
+    static std::string         format;
 
     static int level;
 
