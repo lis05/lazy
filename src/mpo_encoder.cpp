@@ -82,14 +82,10 @@ std::vector<token> mpo_encoder::encode() {
             }
             head.insert(h, i);
         }
-        std::cerr << "Cleaning...\n";
-
         head.clear();
     }
-    std::cerr << "Deallocating head...\n";
     head.destroy();
 
-    std::cerr << "Entering loop...\n";
     for (uint32_t i = 0; i < bytes_loaded; i++) {
         config::processed_bytes++;
 
@@ -105,7 +101,7 @@ std::vector<token> mpo_encoder::encode() {
                                  ? INF
                                  : estimate_cost(i - best_match_pos, best_match_len);
         // edge
-        if (edge_cost < 1ll * literal_cost * best_match_len) {
+        if (best_match_len != 1 && edge_cost < 1ll * literal_cost * best_match_len) {
             // float new_cost = cur_dp_cost + edge_cost * COST_MULT;
             uint64_t new_cost = cur_dp_cost + edge_cost;
             if (dp_cost[i + best_match_len] > new_cost) {

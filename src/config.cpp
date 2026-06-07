@@ -1,6 +1,12 @@
 #include "config.h"
 
-#include <sys/resource.h>
+#include <unistd.h>
+
+#include <chrono>
+#include <format>
+#include <fstream>
+#include <iostream>
+#include <thread>
 
 size_t              config::block_size = 1 << 20;
 size_t              config::window_size = 1 << 16;
@@ -44,15 +50,13 @@ void config::print() {
 }
 
 static auto get_mb() {
-    struct rusage usage;
-    getrusage(RUSAGE_SELF, &usage);
-#ifdef __APPLE__
-    // macOS: bytes
-    return usage.ru_maxrss / (1024 * 1024);
-#else
-    // Linux: kilobytes
-    return usage.ru_maxrss / 1024;
-#endif
+    std::ifstream      stream("/proc/self/statm");
+    unsigned long long vm_pages = 0;
+    if (stream >> vm_pages) {
+        unsigned long long page_size = sysconf(_SC_PAGESIZE);
+        return (vm_pages * page_size) / (1024 * 1024);
+    }
+    return 0ULL;
 }
 
 void config::report_progress() {
@@ -89,7 +93,7 @@ void config::report_progress() {
 
         std::cout << std::format(
                          "\rProgress: {}% ({} / {}, Elapsed: {}s, Total Est: {}s, "
-                         "RSS: {}MB)",
+                         "MEM: {}MB)",
                          100 * current_processed / total_bytes, current_processed,
                          total_bytes, elapsed, total_estimated, get_mb())
                   << std::flush;
