@@ -9,12 +9,9 @@
 #include "CLI11.h"
 #include "config.h"
 #include "decoder.h"
-#include "div_encoder.h"
-#include "encoder.h"
 #include "formats.h"
 #include "ioreader.h"
 #include "iowriter.h"
-#include "mp_encoder.h"
 #include "mpo_encoder.h"
 #include "token.h"
 #include "worker_pool.h"
@@ -52,6 +49,8 @@ static void encode(auto &in, auto &out, auto print_total_tokens) {
                     break;
                 }
 
+                config::print_message(
+                    std::format("Processing block {}\n", b.value().index));
                 Encoder encoder;
 
                 auto [data_buffer, bytes_loaded] = encoder.for_loading();
@@ -70,8 +69,10 @@ static void encode(auto &in, auto &out, auto print_total_tokens) {
     writer.stop();
     writer_thread.join();
 
+    config::finished = true;
+
     if (print_total_tokens) {
-        std::cout << "Total tokens: " << total << "\n";
+        config::print_message(std::format("Total tokens: {}\n", total));
     }
 }
 
@@ -98,7 +99,7 @@ static void decode(auto &in, auto &out) {
 }
 
 int main(int argc, char **argv) {
-    CLI::App app{"Simple LZ77 encoder."};
+    CLI::App app{"LZ77 + RC compressor"};
     argv = app.ensure_utf8(argv);
 
     bool run_encoder = false;
@@ -130,25 +131,20 @@ int main(int argc, char **argv) {
                    "fastest(default), 12 = very good compression in reasonable "
                    "time, 13-15 = best compression in unreasonably big time");
 
-    app.add_option("-f", config::format,
-                   "Output format (if encoding): readable, ctx(default)");
-    app.add_option("-j", config::jobs, "Number of encoders to work in parallel");
+    app.add_option("-f", config::format, "Output format (if encoding): turbo2");
+    // app.add_option("-j", config::jobs, "Number of encoders to work in parallel");
     app.add_option("-b", config::blocks,
                    "Number of input blocks to read in parallel");
     app.add_option("--bs", config::block_size, "Processing block size in bytes");
     app.add_option("--ws", config::window_size, "Dictionary window size in bytes");
     app.add_option("--fl", config::future_limit, "Lookahead buffer limit size");
     app.add_option("--mm", config::max_matches, "Max matches before acceptation");
-    app.add_option("--lm", config::lazy_matching,
-                   "Bytes to skip during lazy matching");
-    app.add_option(
-        "-k", config::divisions,
-        "Number of workers to process a single block. If 1, uses the standard "
-        "encoder. If more, uses a different encoded that works best on big blocks");
+    app.add_option("-k", config::divisions,
+                   "Number of workers to process a single block");
     app.add_option("--pl", config::prefix_lengths,
                    "List of prefix lengths for the encoder to check. More than 1 "
-                   "will use a different encoder.")->delimiter(',');
-    app.add_flag("-O", config::optimal_encoder, "Use optimal encoder");
+                   "will use a different encoder.")
+        ->delimiter(',');
 
     CLI11_PARSE(app, argc, argv);
 
@@ -178,15 +174,7 @@ int main(int argc, char **argv) {
         config::processed_bytes = 0;
 
         auto printer = std::jthread{config::report_progress};
-        if (config::optimal_encoder) {
-            encode<mpo_encoder>(in, out, print_total_tokens);
-        } else if (config::prefix_lengths.size() != 1) {
-            encode<mp_encoder>(in, out, print_total_tokens);
-        } else if (config::divisions == 1) {
-            encode<encoder>(in, out, print_total_tokens);
-        } else {
-            encode<div_encoder>(in, out, print_total_tokens);
-        }
+        encode<mpo_encoder>(in, out, print_total_tokens);
     } else if (run_decoder) {
         decode(in, out);
     }
@@ -194,7 +182,7 @@ int main(int argc, char **argv) {
     std::chrono::duration<double> elapsed_time = end_time - start_time;
 
     if (measure_time) {
-        std::cout << "TIME: " << elapsed_time.count() << "s\n";
+        config::print_message(std::format("TIME: {}s\n", elapsed_time.count()));
     }
 
     in.close();

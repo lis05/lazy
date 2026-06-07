@@ -5,18 +5,12 @@
 #include <string>
 #include <vector>
 
-#include "fmt_ctx.h"
-#include "fmt_readable.h"
-#include "fmt_turbo.h"
 #include "fmt_turbo2.h"
 #include "token.h"
 
 namespace formats {
 
 enum marks : unsigned char {
-    READABLE,
-    CTX,
-    TURBO,
     TURBO2,
 };
 
@@ -31,9 +25,6 @@ struct format {
     read_block_fn        read_block;
     verify_config_fn     verify_config;
 
-    static format get_readable();
-    static format get_ctx();
-    static format get_turbo();
     static format get_turbo2();
 
     static format get_for_mark(uint8_t mark);

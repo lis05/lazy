@@ -12,24 +12,20 @@ public:
     static size_t block_size;
     static size_t window_size;
     static size_t future_limit;
-    static size_t prefix_size;
-    static size_t total_hashes() {
-        return 1 << (8 * prefix_size);
-    }
     static uint64_t            max_matches;
     static size_t              jobs;
     static size_t              blocks;
     static bool                print_progress;
-    static uint32_t            lazy_matching;
     static size_t              divisions;
     static std::vector<size_t> prefix_lengths;
-    static bool                optimal_encoder;
     static std::string         format;
 
     static int level;
 
+    static bool                 finished;
     static std::atomic_uint64_t processed_bytes;
     static uint64_t             total_bytes;
+    static void                 print_message(const std::string &message);
 
     static void print();
     static void report_progress();

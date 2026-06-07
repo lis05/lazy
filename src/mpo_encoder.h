@@ -1,7 +1,6 @@
 #pragma once
 #include <algorithm>
 #include <array>
-#include <compact_vector/include/compact_vector.hpp>
 #include <ext/pb_ds/assoc_container.hpp>
 #include <functional>
 #include <iterator>
@@ -28,7 +27,9 @@ class mpo_encoder {
     table                              head;
     std::vector<std::vector<uint32_t>> prev;
 
-    compact::vector<uint64_t, 40> dp_cost;
+    std::vector<uint32_t> dp_best_match_len;
+    std::vector<uint32_t> dp_best_match_pos;
+    std::vector<uint64_t> dp_cost;
     std::vector<uint32_t>         dp_from;
 
 public:
