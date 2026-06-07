@@ -88,11 +88,13 @@ std::vector<token> mpo_encoder::encode() {
     }
     head.destroy();
 
-    worker_pool pool(config::divisions);
-    std::latch  finished(config::divisions);
-
-    uint32_t block_size = std::max(
+    constexpr uint32_t max_block_size = 1 << 20;
+    uint32_t           block_size = std::max(
         uint32_t{1}, static_cast<uint32_t>(bytes_loaded / config::divisions));
+    if (block_size > max_block_size) {
+        block_size = max_block_size;
+    }
+    uint32_t blocks = (bytes_loaded + block_size - 1) / block_size;
     uint32_t start = 0;
 
     config::print_message(std::format("Calculating tokens\n"));
@@ -101,19 +103,20 @@ std::vector<token> mpo_encoder::encode() {
 
     dp_best_match_len.resize(bytes_loaded, 1);
     dp_best_match_pos.resize(bytes_loaded, NONE);
-    for (size_t block = 0; block < config::divisions; block++) {
+
+    worker_pool pool(config::divisions);
+    std::latch  finished(blocks);
+
+    while (start < bytes_loaded) {
         uint32_t end = start + block_size - 1;
-        if (block + 1 == config::divisions) {
-            end = bytes_loaded - 1;
-        }
         if (end >= bytes_loaded) {
             end = bytes_loaded - 1;
         }
 
         pool.enqueue([&, start, end]() mutable {
             while (start < end) {
-                auto future_limit =
-                    std::min(bytes_loaded - start, config::future_limit);
+                auto future_limit = std::min(static_cast<size_t>(end - start + 1),
+                                             config::future_limit);
                 uint32_t best_match_len, best_match_pos;
                 process(future_limit, NONE, start, best_match_len, best_match_pos);
 
@@ -126,7 +129,7 @@ std::vector<token> mpo_encoder::encode() {
             finished.count_down();
         });
 
-        start += block_size;
+        start = end + 1;
     }
 
     finished.wait();

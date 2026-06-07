@@ -171,6 +171,7 @@ void write_format_mark(std::ostream& out) {
 }
 
 void write_block(const std::vector<token>& tokens, std::ostream& out) {
+    config::print_message("Encoding tokens (may take a while)\n");
     std::vector<std::byte> control;
     std::vector<std::byte> lit;
     std::vector<std::byte> dist;
@@ -244,6 +245,7 @@ void write_block(const std::vector<token>& tokens, std::ostream& out) {
 }
 
 std::vector<token> read_block(std::istream& in) {
+    config::print_message("Decoding tokens (may take a while)\n");
     header h;
     if (!(in >> h)) {
         return {};

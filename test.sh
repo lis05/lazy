@@ -16,7 +16,7 @@ rm /tmp/encoded /tmp/decoded 1>/dev/null 2>&1
 
 TIMEFORMAT="Encoding: %R"
 time $compressor -e -i $to_encode -o /tmp/encoded -t "$@" || \
-    echo "Failed command: $compressor -e -i $to_encode -o /tmp/encoded -f $format -t $@"
+    echo "Failed command: $compressor -e -i $to_encode -o /tmp/encoded -t $@"
 
 TIMEFORMAT="Decoding: %R"
 time $compressor -d -i /tmp/encoded -o /tmp/decoded "$@" || \
