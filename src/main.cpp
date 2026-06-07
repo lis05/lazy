@@ -1,3 +1,4 @@
+#include <CLI11/include/CLI/CLI.hpp>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -6,7 +7,6 @@
 #include <latch>
 #include <map>
 
-#include "CLI11.h"
 #include "config.h"
 #include "decoder.h"
 #include "formats.h"
@@ -99,7 +99,7 @@ static void decode(auto &in, auto &out) {
 }
 
 int main(int argc, char **argv) {
-    CLI::App app{"LZ77 + RC compressor"};
+    CLI::App app{"LaZy: LZ77 + RC compressor"};
     argv = app.ensure_utf8(argv);
 
     bool run_encoder = false;
@@ -126,15 +126,6 @@ int main(int argc, char **argv) {
     bool print_config = false;
     app.add_flag("-c", print_config, "Print config and exit");
 
-    app.add_option("-l", config::level,
-                   "Compression level (-1 = allow individual parameters, 1 = "
-                   "fastest(default), 12 = very good compression in reasonable "
-                   "time, 13-15 = best compression in unreasonably big time");
-
-    app.add_option("-f", config::format, "Output format (if encoding): turbo2");
-    // app.add_option("-j", config::jobs, "Number of encoders to work in parallel");
-    app.add_option("-b", config::blocks,
-                   "Number of input blocks to read in parallel");
     app.add_option("--bs", config::block_size, "Processing block size in bytes");
     app.add_option("--ws", config::window_size, "Dictionary window size in bytes");
     app.add_option("--fl", config::future_limit, "Lookahead buffer limit size");
