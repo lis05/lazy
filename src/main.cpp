@@ -85,14 +85,14 @@ static void decode(auto &in, auto &out) {
             break;
         }
         auto format = formats::format::get_for_mark(mark);
-        auto tokens = format.read_block(in);
+        auto [orig_size, tokens] = format.read_block(in);
 
         if (tokens.empty()) {
             break;
         }
 
         decoder.reset();
-        decoder.decode(tokens);
+        decoder.decode(orig_size, tokens);
         auto [data, len] = decoder.get_bytes();
         out.write(reinterpret_cast<const char *>(data), len);
     }

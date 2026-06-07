@@ -43,11 +43,16 @@ void config::print() {
 }
 
 static auto get_mb() {
-    std::ifstream      stream("/proc/self/statm");
-    unsigned long long vm_pages = 0;
-    if (stream >> vm_pages) {
-        unsigned long long page_size = sysconf(_SC_PAGESIZE);
-        return (vm_pages * page_size) / (1024 * 1024);
+    std::ifstream stream("/proc/self/status");
+    std::string   line;
+    while (std::getline(stream, line)) {
+        if (line.compare(0, 7, "VmPeak:") == 0) {
+            size_t idx = line.find_first_of("0123456789");
+            if (idx != std::string::npos) {
+                unsigned long long vm_peak_kb = std::stoull(line.substr(idx));
+                return vm_peak_kb / 1024;
+            }
+        }
     }
     return 0ULL;
 }

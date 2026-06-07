@@ -7,6 +7,7 @@
 
 namespace formats::turbo2 {
 struct header {
+    uint64_t orig_bytes;
     uint32_t n_control;
     uint32_t n_lit;
     uint32_t n_dist;
@@ -21,8 +22,8 @@ struct header {
     friend std::ostream& operator<<(std::ostream& out, const header& h);
 };
 
-void               verify_config();
-void               write_format_mark(std::ostream& out);
-void               write_block(const std::vector<token>& tokens, std::ostream& out);
-std::vector<token> read_block(std::istream& in);
+void verify_config();
+void write_format_mark(std::ostream& out);
+void write_block(const std::vector<token>& tokens, std::ostream& out);
+std::pair<uint64_t, std::vector<token>> read_block(std::istream& in);
 }  // namespace formats::turbo2

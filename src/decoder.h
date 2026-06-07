@@ -19,5 +19,5 @@ public:
 
     std::pair<const std::byte *, size_t> get_bytes() const noexcept;
 
-    void decode(const std::vector<token> &tokens);
+    void decode(size_t orig_size, const std::vector<token> &tokens);
 };

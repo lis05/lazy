@@ -110,6 +110,7 @@ struct bins_cfg {
 using dist_bins = bins_cfg<3, 8>;
 
 std::istream& operator>>(std::istream& in, header& h) {
+    in.read(reinterpret_cast<char*>(&h.orig_bytes), sizeof(h.orig_bytes));
     in.read(reinterpret_cast<char*>(&h.n_control), sizeof(h.n_control));
     in.read(reinterpret_cast<char*>(&h.n_lit), sizeof(h.n_lit));
     in.read(reinterpret_cast<char*>(&h.n_dist), sizeof(h.n_dist));
@@ -123,6 +124,7 @@ std::istream& operator>>(std::istream& in, header& h) {
 }
 
 std::ostream& operator<<(std::ostream& out, const header& h) {
+    out.write(reinterpret_cast<const char*>(&h.orig_bytes), sizeof(h.orig_bytes));
     out.write(reinterpret_cast<const char*>(&h.n_control), sizeof(h.n_control));
     out.write(reinterpret_cast<const char*>(&h.n_lit), sizeof(h.n_lit));
     out.write(reinterpret_cast<const char*>(&h.n_dist), sizeof(h.n_dist));
@@ -177,6 +179,7 @@ void write_block(const std::vector<token>& tokens, std::ostream& out) {
     std::vector<std::byte> dist;
     std::vector<uint8_t>   len;
     header                 header;
+    header.orig_bytes = 0;
 
     std::vector<std::byte> extra_dist;
     auto                   writer = bit_writer{std::back_inserter(extra_dist)};
@@ -186,8 +189,10 @@ void write_block(const std::vector<token>& tokens, std::ostream& out) {
         if (std::holds_alternative<std::byte>(t)) {
             control.push_back(std::byte{0});
             lit.push_back(std::get<std::byte>(t));
+            header.orig_bytes++;
         } else {
             const auto m = std::get<match>(t);
+            header.orig_bytes += m.length;
             if (i >= 1 && std::holds_alternative<match>(tokens[i - 1]) &&
                 m == std::get<match>(tokens[i - 1])) {
                 control.push_back(std::byte{1});
@@ -244,7 +249,7 @@ void write_block(const std::vector<token>& tokens, std::ostream& out) {
     out.write(reinterpret_cast<const char*>(extra_dist.data()), extra_dist.size());
 }
 
-std::vector<token> read_block(std::istream& in) {
+std::pair<uint64_t, std::vector<token>> read_block(std::istream& in) {
     config::print_message("Decoding tokens (may take a while)\n");
     header h;
     if (!(in >> h)) {
@@ -307,6 +312,6 @@ std::vector<token> read_block(std::istream& in) {
         }
     }
 
-    return tokens;
+    return {h.orig_bytes, tokens};
 }
 }  // namespace formats::turbo2

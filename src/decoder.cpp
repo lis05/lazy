@@ -10,7 +10,8 @@ std::pair<const std::byte *, size_t> decoder::get_bytes() const noexcept {
     return {data.data(), data.size()};
 }
 
-void decoder::decode(const std::vector<token> &tokens) {
+void decoder::decode(size_t orig_size, const std::vector<token> &tokens) {
+    data.reserve(orig_size);
     for (auto t : tokens) {
         if (std::holds_alternative<std::byte>(t)) {
             data.push_back(std::get<std::byte>(t));
