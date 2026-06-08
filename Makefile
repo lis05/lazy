@@ -5,9 +5,11 @@ CC=gcc
 LD=g++
 
 INCLUDES=-Ithird_party/
-CXXFLAGS=-O3 -g -ftree-vectorize -march=native -std=c++23 -MMD -MP $(INCLUDES)
-CFLAGS=-O3 -g -ftree-vectorize -march=native -std=gnu11 $(INCLUDES)
-LDFLAGS=-g
+CXXFLAGS=-Oz -ffunction-sections -fdata-sections -flto -fno-ident -fno-asynchronous-unwind-tables -march=native -std=c++23 -MMD -MP $(INCLUDES)
+CFLAGS=-Oz -ffunction-sections -fdata-sections -flto -fno-ident -fno-asynchronous-unwind-tables -std=gnu11 $(INCLUDES)
+#CXXFLAGS=-O3 -g -ftree-vectorize -march=native -std=c++23 -MMD -MP $(INCLUDES)
+#CFLAGS=-O3 -g -ftree-vectorize -march=native -std=gnu11 $(INCLUDES)
+LDFLAGS=-s -flto -Wl,--gc-sections
 LDLIBS=
 
 TARGET=build/lazy
