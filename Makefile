@@ -12,7 +12,7 @@ CFLAGS=-Oz -ffunction-sections -fdata-sections -flto -fno-ident -fno-asynchronou
 LDFLAGS=-s -flto -Wl,--gc-sections
 LDLIBS=
 
-TARGET=build/lazy
+TARGET=build/lzmpo
 
 SOURCES=$(wildcard src/*.cpp)
 

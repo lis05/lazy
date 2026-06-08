@@ -99,7 +99,7 @@ static void decode(auto &in, auto &out) {
 }
 
 int main(int argc, char **argv) {
-    CLI::App app{"LaZy: LZ77 + RC compressor"};
+    CLI::App app{"lzmpo: LZ77 multiple prefixes optimal compressor"};
     argv = app.ensure_utf8(argv);
 
     bool run_encoder = false;
