@@ -146,7 +146,7 @@ std::vector<token> mpo_encoder::encode() {
         }
 
         pool.enqueue([&, start, end]() mutable {
-            while (start < end) {
+            while (start <= end) {
                 auto future_limit = std::min(static_cast<size_t>(end - start + 1),
                                              config::future_limit);
                 uint32_t best_match_len, best_match_pos;
@@ -175,6 +175,7 @@ std::vector<token> mpo_encoder::encode() {
 
     dp_cost.resize(bytes_loaded + 1, INF);
     dp_from.resize(bytes_loaded + 1, NONE);
+    states.resize(bytes_loaded + 1, estimators::better::state{0, 0, 0});
     dp_cost[0] = 0;
     dp_from[0] = 0;
     for (uint32_t i = 0; i < bytes_loaded; i++) {
@@ -183,26 +184,35 @@ std::vector<token> mpo_encoder::encode() {
         uint32_t best_match_len = dp_best_match_len[i];
         uint32_t best_match_pos = dp_best_match_pos[i];
 
-        uint64_t edge_cost = best_match_len == 1
-                                 ? INF
-                                 : estimate_cost(i - best_match_pos, best_match_len);
+        uint64_t edge_cost =
+            best_match_len == 1 ? INF
+                                : estimators::better::cost(
+                                      i - best_match_pos, best_match_len, states[i]);
         // edge
-        if (best_match_len != 1 && edge_cost < 1ll * literal_cost * best_match_len) {
-            // float new_cost = cur_dp_cost + edge_cost * COST_MULT;
+        if (best_match_len != 1 &&
+            edge_cost <
+                1ll * estimators::better::literal_cost<uint64_t> * best_match_len) {
             uint64_t new_cost = cur_dp_cost + edge_cost;
             if (dp_cost[i + best_match_len] > new_cost) {
                 dp_cost[i + best_match_len] = new_cost;
                 dp_from[i + best_match_len] = i;
+                const auto &src = states[i];
+                auto       &s = states[i + best_match_len];
+                s = estimators::better::state{i - best_match_pos, src.dist_cache[0],
+                                              src.dist_cache[1]};
             }
         }
 
         // literal
         if (i + 1 <= bytes_loaded) {
-            // float new_cost = cur_dp_cost + literal_cost * COST_MULT;
-            uint64_t new_cost = cur_dp_cost + literal_cost;
+            uint64_t new_cost =
+                cur_dp_cost + estimators::better::literal_cost<uint64_t>;
             if (dp_cost[i + 1] > new_cost) {
                 dp_cost[i + 1] = new_cost;
                 dp_from[i + 1] = i;
+                const auto &src = states[i];
+                auto       &s = states[i + 1];
+                s = src;
             }
         }
         config::processed_bytes++;
@@ -383,13 +393,17 @@ void mpo_encoder::write_stats_tokens() {
     }
 
     out << "i,token_type,distance,length,estimated_entropy\n";
-    size_t i = 0;
+    size_t   i = 0;
+    uint32_t file_pos = 0;
     for (const auto &t : tokens) {
         if (std::holds_alternative<std::byte>(t)) {
             out << i << ",lit,0,0,0\n";
+            file_pos++;
         } else {
             const auto [d, l] = std::get<match>(t);
-            out << i << ",match," << d << "," << l << "," << estimate_cost(d, l) << "\n";
+            out << i << ",match," << d << "," << l << ","
+                << estimators::better::cost(d, l, states[file_pos]) << "\n";
+            file_pos += l;
         }
         i++;
     }

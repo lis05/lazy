@@ -4,110 +4,9 @@
 #include "config.h"
 #include "formats.h"
 #include "turborc.h"
+#include "bins.h"
 
 namespace formats::turbo2 {
-
-// clang-format off
-//
-// First 2^ReservedBits bins match values 1:1. Next Slots bins contain 2 values and
-// emit 1 extra bit. Next Slots bins contain 4 values and emit 2 extra bits. And so
-// on up until the number of bins reachex MaxBins.
-//
-// clang-format on
-template <uint64_t ReservedBits, uint64_t Slots, uint64_t MaxBins = 256>
-struct bins_cfg {
-    static constexpr uint64_t MAX_RESERVED = ((uint64_t)1 << ReservedBits) - 1;
-    static constexpr uint64_t MAX_VAL() {
-        uint64_t ctx = MAX_RESERVED + 1;
-        uint64_t slot = 0;
-        uint64_t value = ctx;
-        uint64_t value_range = 2;
-
-        uint64_t last_good = 0;
-
-        while (ctx < MaxBins &&
-               value + value_range - 1 < std::numeric_limits<uint32_t>::max()) {
-            last_good = value + value_range - 1;
-            ctx++;
-            slot++;
-            value += value_range;
-            if (slot == Slots) {
-                slot = 0;
-                value_range <<= 1;
-            }
-        }
-
-        return last_good;
-    }
-
-    struct info {
-        uint64_t ctx;
-        uint64_t extra_bits;
-        uint64_t base;
-    };
-
-    static constexpr uint64_t blog2(uint64_t x) {
-        return x == 0 ? 0 : 63 - std::countl_zero(x);
-    }
-
-    static inline info get(uint64_t x) {
-        if (x <= MAX_RESERVED) {
-            return info{x, 0, x};
-        }
-
-        uint64_t ctx = MAX_RESERVED + 1;
-        uint64_t slot = 0;
-        uint64_t value = ctx;
-        uint64_t value_range = 2;
-
-        while (ctx < MaxBins && value + value_range - 1 < MAX_VAL()) {
-            if (value <= x && x < value + value_range) {
-                return info{ctx, blog2(value_range), value};
-            }
-            ctx++;
-            slot++;
-            value += value_range;
-            if (slot == Slots) {
-                slot = 0;
-                value_range <<= 1;
-            }
-        }
-
-        throw std::runtime_error(std::format(
-            "Bad number {}. Cannot process: too large ctx/value range. :C", x));
-        return {};
-    }
-
-    static inline info get_from_ctx(uint64_t c) {
-        if (c <= MAX_RESERVED) {
-            return info{c, 0, c};
-        }
-
-        uint64_t ctx = MAX_RESERVED + 1;
-        uint64_t slot = 0;
-        uint64_t value = ctx;
-        uint64_t value_range = 2;
-
-        while (ctx < MaxBins && value + value_range - 1 < MAX_VAL()) {
-            if (ctx == c) {
-                return info{ctx, blog2(value_range), value};
-            }
-            ctx++;
-            slot++;
-            value += value_range;
-            if (slot == Slots) {
-                slot = 0;
-                value_range <<= 1;
-            }
-        }
-
-        throw std::runtime_error(std::format(
-            "Bad context {}. Cannot process: too large ctx/value range. :C", c));
-        return {};
-    }
-};
-
-using dist_bins = bins_cfg<3, 8>;
 
 std::istream& operator>>(std::istream& in, header& h) {
     in.read(reinterpret_cast<char*>(&h.orig_bytes), sizeof(h.orig_bytes));
@@ -119,7 +18,8 @@ std::istream& operator>>(std::istream& in, header& h) {
     in.read(reinterpret_cast<char*>(&h.bytes_lit), sizeof(h.bytes_lit));
     in.read(reinterpret_cast<char*>(&h.bytes_dist), sizeof(h.bytes_dist));
     in.read(reinterpret_cast<char*>(&h.bytes_len), sizeof(h.bytes_len));
-    in.read(reinterpret_cast<char*>(&h.bytes_extra_dist), sizeof(h.bytes_extra_dist));
+    in.read(reinterpret_cast<char*>(&h.bytes_extra_dist),
+            sizeof(h.bytes_extra_dist));
     return in;
 }
 
@@ -134,7 +34,7 @@ std::ostream& operator<<(std::ostream& out, const header& h) {
     out.write(reinterpret_cast<const char*>(&h.bytes_lit), sizeof(h.bytes_lit));
     out.write(reinterpret_cast<const char*>(&h.bytes_dist), sizeof(h.bytes_dist));
     out.write(reinterpret_cast<const char*>(&h.bytes_len), sizeof(h.bytes_len));
-    out.write(reinterpret_cast<const char*>(&h.bytes_extra_dist), 
+    out.write(reinterpret_cast<const char*>(&h.bytes_extra_dist),
               sizeof(h.bytes_extra_dist));
     return out;
 }
@@ -154,9 +54,9 @@ void verify_config() {
     }
 
     if (config::window_size > dist_bins::MAX_VAL()) {
-        throw std::runtime_error(std::format(
-            "Invalid window size {}. Must be at most {}", config::window_size,
-            dist_bins::MAX_VAL()));
+        throw std::runtime_error(
+            std::format("Invalid window size {}. Must be at most {}",
+                        config::window_size, dist_bins::MAX_VAL()));
     }
 
     if (config::future_limit == 0) {
@@ -184,6 +84,8 @@ void write_block(const std::vector<token>& tokens, std::ostream& out) {
     std::vector<std::byte> extra_dist;
     auto                   writer = bit_writer{std::back_inserter(extra_dist)};
 
+    uint32_t dist_cache[3] = {0, 0, 0};
+
     for (size_t i = 0; i < tokens.size(); i++) {
         auto& t = tokens[i];
         if (std::holds_alternative<std::byte>(t)) {
@@ -193,28 +95,25 @@ void write_block(const std::vector<token>& tokens, std::ostream& out) {
         } else {
             const auto m = std::get<match>(t);
             header.orig_bytes += m.length;
-            if (i >= 1 && std::holds_alternative<match>(tokens[i - 1]) &&
-                m == std::get<match>(tokens[i - 1])) {
+
+            if (m.distance == dist_cache[0]) {
                 control.push_back(std::byte{1});
-                continue;
-            }
-            else if (i >= 1 && std::holds_alternative<match>(tokens[i - 1]) &&
-                std::get<match>(tokens[i - 1]).distance == m.distance) {
+            } else if (m.distance == dist_cache[1]) {
                 control.push_back(std::byte{2});
-            } else if (i >= 2 && std::holds_alternative<match>(tokens[i - 2]) &&
-                       std::get<match>(tokens[i - 2]).distance == m.distance) {
+            } else if (m.distance == dist_cache[2]) {
                 control.push_back(std::byte{3});
-            } else if (i >= 3 && std::holds_alternative<match>(tokens[i - 3]) &&
-                       std::get<match>(tokens[i - 3]).distance == m.distance) {
-                control.push_back(std::byte{4});
             } else {
-                control.push_back(std::byte{5});
+                control.push_back(std::byte{4});
                 auto dbins = dist_bins::get(m.distance);
                 dist.push_back(static_cast<std::byte>(dbins.ctx));
                 auto dist_val = m.distance - dbins.base;
                 writer.write(dist_val, dbins.extra_bits);
             }
             len.push_back(m.length - 1);
+
+            dist_cache[2] = dist_cache[1];
+            dist_cache[1] = dist_cache[0];
+            dist_cache[0] = m.distance;
         }
     }
 
@@ -288,25 +187,30 @@ std::pair<uint64_t, std::vector<token>> read_block(std::istream& in) {
     size_t dist_idx = 0;
     size_t len_idx = 0;
 
+    uint32_t dist_cache[3] = {0, 0, 0};
+
     for (size_t i = 0; i < h.n_control; ++i) {
         if (control[i] == std::byte{0}) {
             tokens.push_back(lit[lit_idx++]);
-        } else if (control[i] == std::byte{1}) {
-            tokens.push_back(tokens[i - 1]);
         } else {
             uint32_t d;
-            if (control[i] == std::byte{2}) {
-                d = std::get<match>(tokens[i - 1]).distance;
+            if (control[i] == std::byte{1}) {
+                d = dist_cache[0];
+            } else if (control[i] == std::byte{2}) {
+                d = dist_cache[1];
             } else if (control[i] == std::byte{3}) {
-                d = std::get<match>(tokens[i - 2]).distance;
-            } else if (control[i] == std::byte{4}) {
-                d = std::get<match>(tokens[i - 3]).distance;
+                d = dist_cache[2];
             } else {
                 uint32_t d_ctx = static_cast<uint32_t>(dist[dist_idx++]);
                 auto     dbins = dist_bins::get_from_ctx(d_ctx);
                 uint32_t d_val = reader.read<uint32_t>(dbins.extra_bits);
                 d = dbins.base + d_val;
             }
+
+            dist_cache[2] = dist_cache[1];
+            dist_cache[1] = dist_cache[0];
+            dist_cache[0] = d;
+
             tokens.push_back(match{
                 .distance = d, .length = static_cast<uint32_t>(len[len_idx++]) + 1});
         }

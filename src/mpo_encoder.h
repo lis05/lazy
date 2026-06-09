@@ -24,14 +24,16 @@ class mpo_encoder {
     std::vector<std::byte> data;
     std::vector<token>     tokens;
 
+    std::vector<estimators::better::state> states;
+
     __gnu_pbds::gp_hash_table<uint32_t, uint32_t> head_gp;
-    table                              head;
-    std::vector<std::vector<uint32_t>> prev;
+    table                                         head;
+    std::vector<std::vector<uint32_t>>            prev;
 
     std::vector<uint32_t> dp_best_match_len;
     std::vector<uint32_t> dp_best_match_pos;
     std::vector<uint64_t> dp_cost;
-    std::vector<uint32_t>         dp_from;
+    std::vector<uint32_t> dp_from;
 
 public:
     mpo_encoder();
@@ -39,12 +41,6 @@ public:
     std::pair<std::byte *, size_t &> for_loading();
 
 private:
-    static constexpr uint32_t literal_cost = estimators::literal_cost<uint32_t>;
-
-    static inline uint32_t estimate_cost(uint32_t dist, uint32_t len) {
-        return estimators::cost(dist, len);
-    }
-
     void process(auto future_limit, const auto NONE, auto i, auto &best_match_len,
                  auto &best_match_pos);
 
