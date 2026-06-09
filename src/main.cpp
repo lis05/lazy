@@ -21,7 +21,7 @@ int verbose;
 }
 
 template <typename Encoder>
-static void encode(auto &in, auto &out, auto print_total_tokens) {
+static void encode(auto &in, auto &out, auto print_total_tokens, auto &pp) {
     auto format = formats::format::get_for_option(config::format);
     format.verify_config();
 
@@ -69,21 +69,24 @@ static void encode(auto &in, auto &out, auto print_total_tokens) {
     writer.stop();
     writer_thread.join();
 
-    config::finished = true;
+    config::finish();
+    pp.join();
 
     if (print_total_tokens) {
         config::print_message(std::format("Total tokens: {}\n", total));
     }
 }
 
-static void decode(auto &in, auto &out) {
+static void decode(auto &in, auto &out, auto &pp) {
     decoder decoder;
 
+    uint64_t i = 0;
     while (true) {
         unsigned char mark;
         if (!(in >> mark)) {
             break;
         }
+        config::print_message(std::format("Processing block {}\n", i++));
         auto format = formats::format::get_for_mark(mark);
         auto [orig_size, tokens] = format.read_block(in);
 
@@ -96,6 +99,9 @@ static void decode(auto &in, auto &out) {
         auto [data, len] = decoder.get_bytes();
         out.write(reinterpret_cast<const char *>(data), len);
     }
+
+    config::finish();
+    pp.join();
 }
 
 int main(int argc, char **argv) {
@@ -114,6 +120,20 @@ int main(int argc, char **argv) {
     std::string output_file = "";
     app.add_option("-o", output_file, "Output file")->required();
 
+    app.add_option("--bs", config::block_size, "Processing block size in bytes");
+    app.add_option("--ws", config::window_size, "Dictionary window size in bytes");
+    app.add_option("--fl", config::future_limit, "Lookahead buffer limit size");
+    app.add_option("--mm", config::max_matches, "Max matches before acceptation");
+    app.add_option("-k", config::divisions,
+                   "Number of workers to process a single block");
+    app.add_option("--pl", config::prefix_lengths,
+                   "List of prefix lengths for the encoder to check")
+        ->delimiter(',');
+    app.add_option("-b", config::hash_bits,
+                   "How many bits will be taken when calculating a hash. If 0, a "
+                   "hash map will be used. If not 0, a table of size 2^<bits> will "
+                   "be used. Should not exceed 32");
+
     bool measure_time = false;
     app.add_flag("-m", measure_time, "Measure execution time");
 
@@ -126,16 +146,8 @@ int main(int argc, char **argv) {
     bool print_config = false;
     app.add_flag("-c", print_config, "Print config and exit");
 
-    app.add_option("--bs", config::block_size, "Processing block size in bytes");
-    app.add_option("--ws", config::window_size, "Dictionary window size in bytes");
-    app.add_option("--fl", config::future_limit, "Lookahead buffer limit size");
-    app.add_option("--mm", config::max_matches, "Max matches before acceptation");
-    app.add_option("-k", config::divisions,
-                   "Number of workers to process a single block");
-    app.add_option("--pl", config::prefix_lengths,
-                   "List of prefix lengths for the encoder to check. More than 1 "
-                   "will use a different encoder.")
-        ->delimiter(',');
+    app.add_flag("-s", config::stats,
+                 "Calculate various statistics and write them to ./stats/");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -153,6 +165,10 @@ int main(int argc, char **argv) {
 
     config::apply_level(config::level, std::filesystem::file_size(
                                            std::filesystem::path{input_file}));
+    if (config::hash_bits > 32) {
+        std::cerr << "Invalid number of hash bits" << std::endl;
+    }
+
     if (print_config) {
         config::print();
         return 0;
@@ -160,14 +176,11 @@ int main(int argc, char **argv) {
 
     auto start_time = std::chrono::high_resolution_clock::now();
     if (run_encoder) {
-        config::total_bytes =
-            std::filesystem::file_size(std::filesystem::path{input_file});
-        config::processed_bytes = 0;
-
         auto printer = std::jthread{config::report_progress};
-        encode<mpo_encoder>(in, out, print_total_tokens);
+        encode<mpo_encoder>(in, out, print_total_tokens, printer);
     } else if (run_decoder) {
-        decode(in, out);
+        auto printer = std::jthread{config::report_progress};
+        decode(in, out, printer);
     }
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed_time = end_time - start_time;

@@ -16,8 +16,10 @@ public:
     static size_t              jobs;
     static size_t              blocks;
     static bool                print_progress;
+    static bool stats;
     static size_t              divisions;
     static std::vector<size_t> prefix_lengths;
+    static size_t hash_bits;
     static std::string         format;
 
     static int level;
@@ -28,6 +30,7 @@ public:
     static void                 print_message(const std::string &message);
 
     static void print();
+    static void finish();
     static void report_progress();
     static void apply_level(int l, size_t file_size);
 };

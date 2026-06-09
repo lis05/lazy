@@ -4,14 +4,7 @@
 
 #include "worker_pool.h"
 
-mpo_encoder::mpo_encoder()
-    : bytes_loaded(0),
-      data(config::block_size),
-      tokens(),
-      head(1),
-      prev(),
-      dp_cost(),
-      dp_from() {
+mpo_encoder::mpo_encoder() : bytes_loaded(0), data(config::block_size), head(1) {
 }
 
 std::pair<std::byte *, size_t &> mpo_encoder::for_loading() {
@@ -55,38 +48,70 @@ std::vector<token> mpo_encoder::encode() {
     constexpr auto INF = std::numeric_limits<uint64_t>::max();
     constexpr auto NONE = std::numeric_limits<uint32_t>::max();
 
-    size_t bits =
-        std::min(size_t{30}, 8 * sizeof(size_t) - std::countl_zero(bytes_loaded));
+    if (config::hash_bits == 0) {
+        prev.resize(config::prefix_lengths.size());
 
-    prev.resize(config::prefix_lengths.size());
-    head = table{bits};
+        for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
+            const auto prefix_len = config::prefix_lengths[len];
+            config::print_message(
+                std::format("Processing prefix_len {}\n", prefix_len));
 
-    for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
-        const auto prefix_len = config::prefix_lengths[len];
-        config::print_message(std::format("Processing prefix_len {}\n", prefix_len));
-
-        if (bytes_loaded < prefix_len) {
-            throw std::runtime_error("Cannot compress");
-        }
-
-        config::total_bytes = bytes_loaded + 1;
-        config::processed_bytes = 0;
-
-        auto &pr = prev[len];
-        pr.reserve(bytes_loaded - prefix_len + 1);
-        for (size_t i = 0; i + prefix_len < bytes_loaded + 1; i++) {
-            auto h = hashes::hashn(data.data() + i, prefix_len);
-            if (!head.has(h)) {
-                pr.push_back(NONE);
-            } else {
-                pr.push_back(head.get(h));
+            if (bytes_loaded < prefix_len) {
+                throw std::runtime_error("Cannot compress");
             }
-            head.insert(h, i);
-            config::processed_bytes++;
+
+            config::total_bytes = bytes_loaded + 1;
+            config::processed_bytes = 0;
+
+            auto &pr = prev[len];
+            pr.reserve(bytes_loaded - prefix_len + 1);
+            for (size_t i = 0; i + prefix_len < bytes_loaded + 1; i++) {
+                auto h = hashes::hashn(data.data() + i, prefix_len);
+                auto it = head_gp.find(h);
+                if (it == head_gp.end()) {
+                    pr.push_back(NONE);
+                } else {
+                    pr.push_back(it->second);
+                }
+                head_gp[h] = i;
+                config::processed_bytes++;
+            }
+            head_gp.clear();
         }
-        head.clear();
+        using T = decltype(head_gp);
+        T{}.swap(head_gp);
+    } else {
+        prev.resize(config::prefix_lengths.size());
+        head = table{config::hash_bits};
+
+        for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
+            const auto prefix_len = config::prefix_lengths[len];
+            config::print_message(
+                std::format("Processing prefix_len {}\n", prefix_len));
+
+            if (bytes_loaded < prefix_len) {
+                throw std::runtime_error("Cannot compress");
+            }
+
+            config::total_bytes = bytes_loaded + 1;
+            config::processed_bytes = 0;
+
+            auto &pr = prev[len];
+            pr.reserve(bytes_loaded - prefix_len + 1);
+            for (size_t i = 0; i + prefix_len < bytes_loaded + 1; i++) {
+                auto h = hashes::hashn(data.data() + i, prefix_len);
+                if (!head.has(h)) {
+                    pr.push_back(NONE);
+                } else {
+                    pr.push_back(head.get(h));
+                }
+                head.insert(h, i);
+                config::processed_bytes++;
+            }
+            head.clear();
+        }
+        head.destroy();
     }
-    head.destroy();
 
     constexpr uint32_t max_block_size = 1 << 20;
     uint32_t           block_size = std::max(
@@ -174,6 +199,11 @@ std::vector<token> mpo_encoder::encode() {
             }
         }
         config::processed_bytes++;
+    }
+
+    {
+        using T = decltype(prev);
+        T{}.swap(prev);
     }
 
     config::print_message(std::format("Backtracking dp\n"));

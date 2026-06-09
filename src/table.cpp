@@ -6,7 +6,7 @@
 #include <vector>
 
 table::table(size_t bits) {
-    mask = (uint32_t{1} << bits) - 1;
+    mask = (uint64_t{1} << bits) - 1;
     data.resize(mask + 1);
     present.resize(mask + 1, false);
 }

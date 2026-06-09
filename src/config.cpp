@@ -3,6 +3,7 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <condition_variable>
 #include <format>
 #include <fstream>
 #include <iostream>
@@ -16,14 +17,15 @@ uint64_t             config::max_matches = 0;
 size_t               config::jobs = 1;
 size_t               config::blocks = 1;
 bool                 config::print_progress = false;
+bool                 config::stats = false;
 size_t               config::divisions = 1;
 std::vector<size_t>  config::prefix_lengths{};
+size_t               config::hash_bits = 0;
 bool                 config::finished = false;
 std::atomic_uint64_t config::processed_bytes;
 uint64_t             config::total_bytes;
 std::string          config::format = "turbo2";
-
-int config::level = 0;
+int                  config::level = 0;
 
 void config::print() {
     std::cout << std::format(
@@ -37,11 +39,12 @@ void config::print() {
                      "prefix_lengths: {}\n"
                      "format: {}\n"
                      "level: {}",
-                     block_size, window_size, future_limit, max_matches, jobs,
-                     blocks, divisions, prefix_lengths, format, level)
+                     config::block_size, config::window_size, config::future_limit,
+                     config::max_matches, config::jobs, config::blocks,
+                     config::divisions, config::prefix_lengths, config::format,
+                     config::level)
               << std::endl;
 }
-
 static auto get_mb() {
     std::ifstream stream("/proc/self/status");
     std::string   line;
@@ -68,6 +71,16 @@ void              config::print_message(const std::string &message) {
     }
 }
 
+static std::mutex              finish_mtx;
+static std::condition_variable finish_cv;
+void                           config::finish() {
+    {
+        std::lock_guard<std::mutex> lock(finish_mtx);
+        config::finished = true;
+    }
+    finish_cv.notify_one();
+}
+
 void config::report_progress() {
     if (!print_progress)
         return;
@@ -90,7 +103,13 @@ void config::report_progress() {
     do {
         using namespace std::chrono_literals;
         auto interval_start_time = std::chrono::system_clock::now();
-        std::this_thread::sleep_for(1000ms);
+
+        std::unique_lock<std::mutex> lock(finish_mtx);
+        if (finish_cv.wait_for(lock, 1000ms, [] { return finished; })) {
+            break;
+        }
+        lock.unlock();
+
         auto now = std::chrono::system_clock::now();
 
         auto elapsed =

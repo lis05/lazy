@@ -24,6 +24,7 @@ class mpo_encoder {
     std::vector<std::byte> data;
     std::vector<token>     tokens;
 
+    __gnu_pbds::gp_hash_table<uint32_t, uint32_t> head_gp;
     table                              head;
     std::vector<std::vector<uint32_t>> prev;
 

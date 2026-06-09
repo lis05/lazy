@@ -12,9 +12,15 @@ std::pair<const std::byte *, size_t> decoder::get_bytes() const noexcept {
 
 void decoder::decode(size_t orig_size, const std::vector<token> &tokens) {
     data.reserve(orig_size);
+
+    config::print_message("Restoring original file\n");
+    config::total_bytes = orig_size;
+    config::processed_bytes = 0;
+
     for (auto t : tokens) {
         if (std::holds_alternative<std::byte>(t)) {
             data.push_back(std::get<std::byte>(t));
+            config::processed_bytes++;
         } else {
             auto [distance, length] = std::get<match>(t);
             if (distance > data.size()) {
@@ -25,6 +31,7 @@ void decoder::decode(size_t orig_size, const std::vector<token> &tokens) {
             for (size_t i = data.size() - distance, len = 0; len < length;
                  len++, i++) {
                 data.push_back(data[i]);
+                config::processed_bytes++;
             }
         }
     }

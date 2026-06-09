@@ -5,7 +5,7 @@
 
 class table {
     size_t size;
-    uint32_t mask;
+    uint64_t mask;
     std::vector<bool> present;
     std::vector<uint32_t> data;
 public:
