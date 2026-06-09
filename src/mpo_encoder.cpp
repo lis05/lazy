@@ -372,4 +372,27 @@ void mpo_encoder::write_stats_tokens() {
     if (!config::stats) {
         return;
     }
+
+    config::print_message("[stats] Calculating tokens\n");
+
+    const std::string file = "stats/tokens.csv";
+    std::filesystem::create_directories("stats");
+    std::ofstream out(file);
+    if (!out) {
+        throw std::runtime_error("Failed to open " + file);
+    }
+
+    out << "i,token_type,distance,length,estimated_entropy\n";
+    size_t i = 0;
+    for (const auto &t : tokens) {
+        if (std::holds_alternative<std::byte>(t)) {
+            out << i << ",lit,0,0,0\n";
+        } else {
+            const auto [d, l] = std::get<match>(t);
+            out << i << ",match," << d << "," << l << "," << estimate_cost(d, l) << "\n";
+        }
+        i++;
+    }
+
+    out.close();
 }

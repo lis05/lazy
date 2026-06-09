@@ -123,6 +123,8 @@ int main(int argc, char **argv) {
     app.add_option("--bs", config::block_size, "Processing block size in bytes");
     app.add_option("--ws", config::window_size, "Dictionary window size in bytes");
     app.add_option("--fl", config::future_limit, "Lookahead buffer limit size");
+    bool set_max_windows = false;
+    app.add_flag("--max", set_max_windows, "Set --bs,--ws,--fl to their max values");
     app.add_option("--mm", config::max_matches, "Max matches before acceptation");
     app.add_option("-k", config::divisions,
                    "Number of workers to process a single block");
@@ -156,6 +158,7 @@ int main(int argc, char **argv) {
         std::cerr << "Failed to read from " << input_file << std::endl;
         return -1;
     }
+    auto input_file_size = std::filesystem::file_size(input_file);
 
     std::ofstream out(output_file, std::ios::binary);
     if (!out.is_open()) {
@@ -163,8 +166,13 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    config::apply_level(config::level, std::filesystem::file_size(
-                                           std::filesystem::path{input_file}));
+    config::apply_level(config::level, input_file_size);
+
+    if (set_max_windows) {
+        config::block_size = config::window_size = input_file_size;
+        config::future_limit = 256;
+    }
+
     if (config::hash_bits > 32) {
         std::cerr << "Invalid number of hash bits" << std::endl;
     }
@@ -186,7 +194,7 @@ int main(int argc, char **argv) {
     std::chrono::duration<double> elapsed_time = end_time - start_time;
 
     if (measure_time) {
-        config::print_message(std::format("TIME: {}s\n", elapsed_time.count()));
+        std::cout << std::format("TIME: {}s\n", elapsed_time.count());
     }
 
     in.close();
