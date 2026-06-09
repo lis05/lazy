@@ -14,27 +14,31 @@ psize() {
 
 rm /tmp/encoded /tmp/decoded 1>/dev/null 2>&1
 
-# Track maximum memory using GNU time. 
-# Re-route compressor stdout to descriptor 3 to keep it visible while capturing time output.
 echo "Encoding..."
 exec 3>&1
+# Capture stderr directly into a variable without breaking pipelines
 enc_err=$(/usr/bin/time -f "Memory: %M KB" $compressor -e -i $to_encode -o /tmp/encoded -t "$@" 2>&1 1>&3)
+enc_status=$?
 exec 3>&-
 
-if [ $? -ne 0 ]; then
-    echo "Failed command: $compressor -e -i $to_encode -o /tmp/encoded -t $@"
+if [ $enc_status -ne 0 ]; then
+    echo "Command failed with exit code $enc_status"
+    echo "$enc_err" | grep -v "Memory:"
+    exit 1
 fi
 
 enc_kb=$(echo "$enc_err" | awk '/Memory:/ {print $2}')
-enc_time=$(echo "$enc_err" | awk '/Elapsed/ || /encoding/ || /[0-9]:[0-9]/ {print}') # Fallback if time outputs text
 
 echo "Decoding..."
 exec 3>&1
 dec_err=$(/usr/bin/time -f "Memory: %M KB" $compressor -d -i /tmp/encoded -o /tmp/decoded "$@" 2>&1 1>&3)
+dec_status=$?
 exec 3>&-
 
-if [ $? -ne 0 ]; then
-    echo "Failed command: $compressor -d -i /tmp/encoded -o /tmp/decoded $@"
+if [ $dec_status -ne 0 ]; then
+    echo "Command failed with exit code $dec_status"
+    echo "$dec_err" | grep -v "Memory:"
+    exit 1
 fi
 
 dec_kb=$(echo "$dec_err" | awk '/Memory:/ {print $2}')

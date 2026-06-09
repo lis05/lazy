@@ -16,11 +16,12 @@ public:
     static size_t              jobs;
     static size_t              blocks;
     static bool                print_progress;
-    static bool stats;
     static size_t              divisions;
     static std::vector<size_t> prefix_lengths;
     static size_t hash_bits;
     static std::string         format;
+
+    static bool stats;
 
     static int level;
 

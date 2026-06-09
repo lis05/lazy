@@ -17,7 +17,6 @@ uint64_t             config::max_matches = 0;
 size_t               config::jobs = 1;
 size_t               config::blocks = 1;
 bool                 config::print_progress = false;
-bool                 config::stats = false;
 size_t               config::divisions = 1;
 std::vector<size_t>  config::prefix_lengths{};
 size_t               config::hash_bits = 0;
@@ -26,6 +25,8 @@ std::atomic_uint64_t config::processed_bytes;
 uint64_t             config::total_bytes;
 std::string          config::format = "turbo2";
 int                  config::level = 0;
+
+bool                 config::stats = false;
 
 void config::print() {
     std::cout << std::format(

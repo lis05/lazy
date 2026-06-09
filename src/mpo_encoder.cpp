@@ -1,6 +1,11 @@
 #include "mpo_encoder.h"
 
+#include <filesystem>
+#include <fstream>
+#include <iostream>
 #include <latch>
+#include <mutex>
+#include <thread>
 
 #include "worker_pool.h"
 
@@ -112,6 +117,8 @@ std::vector<token> mpo_encoder::encode() {
         }
         head.destroy();
     }
+
+    write_stats_hashes();
 
     constexpr uint32_t max_block_size = 1 << 20;
     uint32_t           block_size = std::max(
@@ -241,5 +248,128 @@ std::vector<token> mpo_encoder::encode() {
     }
 
     std::reverse(tokens.begin(), tokens.end());
+
+    write_stats_tokens();
+
     return tokens;
+}
+
+void mpo_encoder::write_stats_hashes() {
+    if (!config::stats) {
+        return;
+    }
+
+    using Map = __gnu_pbds::gp_hash_table<uint32_t, uint32_t>;
+
+    config::print_message("[stats] Calculating hashes\n");
+
+    Map count[config::prefix_lengths.size()];
+
+    constexpr uint32_t NONE = std::numeric_limits<uint32_t>::max();
+
+    for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
+        const auto prefix_len = config::prefix_lengths[len];
+        config::print_message(
+            std::format("[stats] Processing prefix_len {}\n", prefix_len));
+        config::total_bytes = bytes_loaded;
+        config::processed_bytes = 0;
+
+        if (bytes_loaded < prefix_len) {
+            continue;
+        }
+
+        const auto &pr = prev[len];
+
+        // Using uint8_t instead of vector<bool> to allow thread-safe atomic
+        // references
+        std::vector<uint8_t> visited(bytes_loaded, 0);
+        std::mutex           count_mutex;
+
+        uint32_t block_size = std::max(
+            uint32_t{1}, static_cast<uint32_t>(bytes_loaded / config::divisions));
+        uint32_t blocks = (bytes_loaded + block_size - 1) / block_size;
+        uint32_t start = 0;
+
+        worker_pool pool(config::divisions);
+        std::latch  finished(blocks);
+
+        while (start < bytes_loaded) {
+            uint32_t end = start + block_size - 1;
+            if (end >= bytes_loaded) {
+                end = bytes_loaded - 1;
+            }
+
+            pool.enqueue([&, start, end, prefix_len, len]() mutable {
+                Map local_count;
+
+                for (uint32_t i = end;; i--) {
+                    if (i < pr.size()) {
+                        std::atomic_ref<uint8_t> v_ref(visited[i]);
+                        if (v_ref.exchange(1) == 0) {
+                            uint32_t chain_len = 1;
+                            uint32_t curr = pr[i];
+
+                            while (curr != NONE) {
+                                std::atomic_ref<uint8_t> curr_ref(visited[curr]);
+                                if (curr_ref.exchange(1) != 0) {
+                                    break;
+                                }
+                                chain_len++;
+                                curr = pr[curr];
+                            }
+
+                            auto h = static_cast<uint32_t>(
+                                hashes::hashn(data.data() + i, prefix_len));
+                            local_count[h] += chain_len;
+                        }
+                    }
+                    if (i == start) {
+                        break;
+                    }
+                }
+
+                std::lock_guard<std::mutex> lock(count_mutex);
+                for (auto &[h, c] : local_count) {
+                    count[len][h] += c;
+                }
+
+                config::processed_bytes += (end - start + 1);
+                finished.count_down();
+            });
+
+            start = end + 1;
+        }
+
+        finished.wait();
+    }
+
+    Map count_for_len[config::prefix_lengths.size()];
+    for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
+        for (const auto [h, c] : count[len]) {
+            count_for_len[len][c]++;
+        }
+    }
+
+    const std::string file = "stats/hashchains.csv";
+    std::filesystem::create_directories("stats");
+    std::ofstream out(file);
+    if (!out) {
+        throw std::runtime_error("Failed to open " + file);
+    }
+
+    out << "file_size,mm,prefix_length,hashchain_length,count\n";
+    for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
+        for (const auto [l, c] : count_for_len[len]) {
+            out << bytes_loaded << "," << config::max_matches << ","
+                << config::prefix_lengths[len] << "," << l << "," << c << "\n";
+        }
+    }
+
+    out.close();
+}
+
+void mpo_encoder::write_stats_tokens() {
+    if (!config::stats) {
+        return;
+    }
 }

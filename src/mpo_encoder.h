@@ -48,6 +48,9 @@ private:
     void process(auto future_limit, const auto NONE, auto i, auto &best_match_len,
                  auto &best_match_pos);
 
+    void write_stats_hashes();
+    void write_stats_tokens();
+
 public:
     std::vector<token> encode();
 };
