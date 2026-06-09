@@ -26,6 +26,8 @@ CONST_ARGS = [
     "-p",
     "-k",
     "16",
+    "-b",
+    "32"
 ]
 
 # List of --pl values to test (14 items each)
