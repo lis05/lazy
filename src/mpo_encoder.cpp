@@ -184,22 +184,25 @@ std::vector<token> mpo_encoder::encode() {
         uint32_t best_match_len = dp_best_match_len[i];
         uint32_t best_match_pos = dp_best_match_pos[i];
 
-        uint64_t edge_cost =
-            best_match_len == 1 ? INF
-                                : estimators::better::cost(
-                                      i - best_match_pos, best_match_len, states[i]);
-        // edge
-        if (best_match_len != 1 &&
-            edge_cost <
-                1ll * estimators::better::literal_cost<uint64_t> * best_match_len) {
-            uint64_t new_cost = cur_dp_cost + edge_cost;
-            if (dp_cost[i + best_match_len] > new_cost) {
-                dp_cost[i + best_match_len] = new_cost;
-                dp_from[i + best_match_len] = i;
-                const auto &src = states[i];
-                auto       &s = states[i + best_match_len];
-                s = estimators::better::state{i - best_match_pos, src.dist_cache[0],
-                                              src.dist_cache[1]};
+        for (uint32_t ln = 2; ln <= best_match_len; ln++) {
+            uint64_t edge_cost =
+                ln == 1
+                    ? INF
+                    : estimators::better::cost(i - best_match_pos, ln,
+                                               states[i]);
+            // edge
+            if (ln != 1 &&
+                edge_cost < 1ll * estimators::better::literal_cost<uint64_t> *
+                                ln) {
+                uint64_t new_cost = cur_dp_cost + edge_cost;
+                if (dp_cost[i + ln] > new_cost) {
+                    dp_cost[i + ln] = new_cost;
+                    dp_from[i + ln] = i;
+                    const auto &src = states[i];
+                    auto       &s = states[i + ln];
+                    s = estimators::better::state{
+                        i - best_match_pos, src.dist_cache[0], src.dist_cache[1]};
+                }
             }
         }
 
@@ -242,8 +245,7 @@ std::vector<token> mpo_encoder::encode() {
             config::processed_bytes++;
             continue;
         }
-        // edge
-        uint32_t best_match_len = dp_best_match_len[came_from];
+        uint32_t best_match_len = i - came_from;
         uint32_t best_match_pos = dp_best_match_pos[came_from];
         if (best_match_len == 1) {
             throw std::runtime_error(
