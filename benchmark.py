@@ -8,26 +8,19 @@ import time
 
 # Configuration
 LZMPO_BIN = "./build/lzmpo"
-INPUT_FILE = os.path.expanduser("~/Downloads/enwik9")
+INPUT_FILE = os.path.expanduser("datasets/enwik/enwik8")
 ENCODED_FILE = "/tmp/encoded"
 DECODED_FILE = "/tmp/decoded"
 CSV_FILE = "lzmpo_benchmark_results.csv"
 
 # Constant arguments for the compressor
 CONST_ARGS = [
-    "--bs",
-    "1000000000",
-    "--ws",
-    "1000000000",
-    "--fl",
-    "256",
+    "--max",
     "--mm",
     "200",
     "-p",
     "-k",
     "16",
-    "-b",
-    "32"
 ]
 
 # List of --pl values to test (14 items each)
