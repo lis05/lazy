@@ -89,10 +89,11 @@ app.layout = html.Div(style={'fontFamily': 'sans-serif', 'padding': '20px'}, chi
     
     dcc.Tabs(id="analysis-tabs", value='entropy-dist', children=[
         dcc.Tab(label='1. Matches Entropy Density Curve', value='entropy-dist'),
-        dcc.Tab(label='2. Distance Distribution (1% Log Buckets)', value='distance-dist'),
+        dcc.Tab(label='2. Distance Distribution (1% Buckets)', value='distance-dist'),
         dcc.Tab(label='3. Length Distribution (1% Buckets)', value='length-dist'),
-        dcc.Tab(label='4. Length Contribution Curve (Count * Length)', value='length-contrib'),
+        dcc.Tab(label='4. Cumulative Length Contribution', value='length-contrib'),
         dcc.Tab(label='5. Entropy Profile (1% Timeline Chunks)', value='entropy-timeline'),
+        dcc.Tab(label='6. Cumulative Distance Contribution', value='distance-contrib'),
     ]),
     
     html.Div(style={'marginTop': '20px'}, children=[
@@ -173,12 +174,12 @@ def update_graph(selected_tab):
         if len(match_distance) == 0:
             return go.Figure()
             
-        min_val = max(1, match_distance.min())
-        max_val = max(2, match_distance.max())
+        min_val = match_distance.min()
+        max_val = match_distance.max()
         if min_val == max_val:
             max_val += 1
             
-        bins = np.logspace(np.log10(min_val), np.log10(max_val), 101)
+        bins = np.linspace(min_val, max_val, 101)
         counts, edges = np.histogram(match_distance, bins=bins)
         bin_centers = (edges[:-1] + edges[1:]) / 2
         
@@ -199,8 +200,8 @@ def update_graph(selected_tab):
             )
         ])
         fig.update_layout(
-            title="Match Distance Distribution (100 Log-Spaced Buckets)",
-            xaxis=dict(title="Distance (Log Scale)", type='log', tickformat='d'),
+            title="Match Distance Distribution (100 Uniform Buckets)",
+            xaxis=dict(title="Distance"),
             yaxis=dict(title="Count"),
             template="plotly_white"
         )
@@ -252,17 +253,18 @@ def update_graph(selected_tab):
             
         bins = np.linspace(min_val, max_val, 101)
         contrib, edges = np.histogram(match_length, bins=bins, weights=match_length)
+        cum_contrib = np.cumsum(contrib)
         bin_centers = (edges[:-1] + edges[1:]) / 2
         
         hover_text = [
-            f"Range: [{edges[i]:.1f} - {edges[i+1]:.1f})<br>Contribution: {contrib[i]:,.1f}"
-            for i in range(len(contrib))
+            f"Length &le; {edges[i+1]:.1f}<br>Cumulative Contribution: {cum_contrib[i]:,.1f} bytes"
+            for i in range(len(cum_contrib))
         ]
 
         fig = go.Figure(data=[
             go.Scatter(
                 x=bin_centers,
-                y=contrib,
+                y=cum_contrib,
                 mode='lines',
                 hovertext=hover_text,
                 hoverinfo='text',
@@ -272,9 +274,47 @@ def update_graph(selected_tab):
             )
         ])
         fig.update_layout(
-            title="Match Total Length Contribution Curve (Count * Length per Bucket)",
-            xaxis=dict(title="Length"),
-            yaxis=dict(title="Total Contribution (Bytes Covered)"),
+            title="Cumulative Match Length Contribution (Sum of lengths for all matches &le; L)",
+            xaxis=dict(title="Length (L)"),
+            yaxis=dict(title="Cumulative Contribution (Bytes)"),
+            template="plotly_white"
+        )
+
+    elif selected_tab == 'distance-contrib':
+        if len(match_distance) == 0 or len(match_length) == 0:
+            return go.Figure()
+            
+        min_val = match_distance.min()
+        max_val = match_distance.max()
+        if min_val == max_val:
+            max_val += 1
+            
+        bins = np.linspace(min_val, max_val, 101)
+        contrib, edges = np.histogram(match_distance, bins=bins, weights=match_length)
+        cum_contrib = np.cumsum(contrib)
+        bin_centers = (edges[:-1] + edges[1:]) / 2
+        
+        hover_text = [
+            f"Distance &le; {edges[i+1]:.1f}<br>Cumulative Contribution: {cum_contrib[i]:,.1f} bytes"
+            for i in range(len(cum_contrib))
+        ]
+
+        fig = go.Figure(data=[
+            go.Scatter(
+                x=bin_centers,
+                y=cum_contrib,
+                mode='lines',
+                hovertext=hover_text,
+                hoverinfo='text',
+                line=dict(color='darkorange', width=2.5, shape='spline'),
+                fill='tozeroy',
+                fillcolor='rgba(255, 140, 0, 0.1)'
+            )
+        ])
+        fig.update_layout(
+            title="Cumulative Match Distance Contribution (Sum of lengths for all matches with distance &le; D)",
+            xaxis=dict(title="Distance (D)"),
+            yaxis=dict(title="Cumulative Contribution (Bytes)"),
             template="plotly_white"
         )
 
@@ -309,3 +349,4 @@ def update_graph(selected_tab):
 
 if __name__ == '__main__':
     app.run(debug=True)
+
