@@ -9,3 +9,4 @@ benchmark-results
 benchmark-params/*.csv
 __pycache__
 stats
+datasets/enwik/enwik9
