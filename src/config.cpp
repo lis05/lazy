@@ -24,9 +24,11 @@ bool                 config::finished = false;
 std::atomic_uint64_t config::processed_bytes;
 uint64_t             config::total_bytes;
 std::string          config::format = "turbo2";
+bool                 config::ultra = false;
+uint32_t             config::subblock_size = 1024;
 int                  config::level = 0;
 
-bool                 config::stats = false;
+bool config::stats = false;
 
 void config::print() {
     std::cout << std::format(
@@ -36,16 +38,28 @@ void config::print() {
                      "max_matches: {}\n"
                      "jobs: {}\n"
                      "blocks: {}\n"
+                     "print_progress: {}\n"
                      "divisions: {}\n"
                      "prefix_lengths: {}\n"
+                     "hash_bits: {}\n"
+                     "finished: {}\n"
+                     "processed_bytes: {}\n"
+                     "total_bytes: {}\n"
                      "format: {}\n"
-                     "level: {}",
+                     "ultra: {}\n"
+                     "subblock_size: {}\n"
+                     "level: {}\n"
+                     "stats: {}",
                      config::block_size, config::window_size, config::future_limit,
                      config::max_matches, config::jobs, config::blocks,
-                     config::divisions, config::prefix_lengths, config::format,
-                     config::level)
+                     config::print_progress, config::divisions,
+                     config::prefix_lengths, config::hash_bits, config::finished,
+                     config::processed_bytes.load(), config::total_bytes,
+                     config::format, config::ultra, config::subblock_size,
+                     config::level, config::stats)
               << std::endl;
 }
+
 static auto get_mb() {
     std::ifstream stream("/proc/self/status");
     std::string   line;

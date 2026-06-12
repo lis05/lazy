@@ -13,6 +13,7 @@
 #include "ioreader.h"
 #include "iowriter.h"
 #include "mpo_encoder.h"
+#include "mpu_encoder.h"
 #include "token.h"
 #include "worker_pool.h"
 
@@ -124,7 +125,8 @@ int main(int argc, char **argv) {
     app.add_option("--ws", config::window_size, "Dictionary window size in bytes");
     app.add_option("--fl", config::future_limit, "Lookahead buffer limit size");
     bool set_max_windows = false;
-    app.add_flag("--max", set_max_windows, "Set --bs,--ws,--fl to their max values");
+    app.add_flag("--fit", set_max_windows,
+                 "Set --bs,--ws,--fl to fit the entire file");
     app.add_option("--mm", config::max_matches, "Max matches before acceptation");
     app.add_option("-k", config::divisions,
                    "Number of workers to process a single block");
@@ -135,6 +137,11 @@ int main(int argc, char **argv) {
                    "How many bits will be taken when calculating a hash. If 0, a "
                    "hash map will be used. If not 0, a table of size 2^<bits> will "
                    "be used. Should not exceed 32");
+    app.add_flag("--ultra", config::ultra,
+                 "Use a better, slower, and heavier compressor");
+    app.add_option("--sb", config::subblock_size,
+                   "Subblock size. Only active when --ultra. --fit will also set "
+                   "this to a reasonable value");
 
     bool measure_time = false;
     app.add_flag("-m", measure_time, "Measure execution time");
@@ -171,6 +178,8 @@ int main(int argc, char **argv) {
     if (set_max_windows) {
         config::block_size = config::window_size = input_file_size;
         config::future_limit = 256;
+        config::subblock_size =
+            std::max(size_t{1024}, input_file_size / 256);
     }
 
     if (config::hash_bits > 32) {
@@ -185,7 +194,11 @@ int main(int argc, char **argv) {
     auto start_time = std::chrono::high_resolution_clock::now();
     if (run_encoder) {
         auto printer = std::jthread{config::report_progress};
-        encode<mpo_encoder>(in, out, print_total_tokens, printer);
+        if (config::ultra) {
+            encode<mpu_encoder>(in, out, print_total_tokens, printer);
+        } else {
+            encode<mpo_encoder>(in, out, print_total_tokens, printer);
+        }
     } else if (run_decoder) {
         auto printer = std::jthread{config::report_progress};
         decode(in, out, printer);

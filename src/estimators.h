@@ -17,7 +17,7 @@ static inline T cost(T dist, T len) {
 }
 }  // namespace simple
 
-namespace better {
+namespace _stupid_but_works {
 struct state {
     uint32_t dist_cache[3];
     state(uint32_t dist0, uint32_t dist1, uint32_t dist2) {
@@ -47,5 +47,39 @@ static inline T cost(T dist, T len, const state &s) {
                8 * (full_bits - std::countl_zero(len));
     }
 }
-}  // namespace better
+}  // namespace _stupid_but_works
+namespace _smart_but_freaking_sucks {
+struct state {
+    uint32_t dist_cache[3];
+    state(uint32_t dist0, uint32_t dist1, uint32_t dist2) {
+        dist_cache[0] = dist0;
+        dist_cache[1] = dist1;
+        dist_cache[2] = dist2;
+    }
+};
+
+template <std::integral T>
+static constexpr T control_cost = 1;
+
+template <std::integral T>
+static constexpr T literal_cost = 8;
+
+template <std::integral T>
+static inline T cost(T dist, T len, const state &s) {
+    constexpr T full_bits = 8 * sizeof(T);
+
+    T len_cost = full_bits - std::countl_zero(len);
+
+    if (s.dist_cache[0] == dist || s.dist_cache[1] == dist ||
+        s.dist_cache[2] == dist) {
+        return control_cost<T> + len_cost;
+    } else {
+        auto info = dist_bins::get(dist);
+        auto ctx_cost = full_bits - std::countl_zero(static_cast<T>(info.ctx));
+        return control_cost<T> + ctx_cost + info.extra_bits + len_cost;
+    }
+}
+}  // namespace _smart_but_freaking_sucks
+
+namespace better = _stupid_but_works;
 }  // namespace estimators

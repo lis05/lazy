@@ -1,4 +1,4 @@
-#include "mpo_encoder.h"
+#include "mpu_encoder.h"
 
 #include <filesystem>
 #include <fstream>
@@ -9,19 +9,17 @@
 
 #include "worker_pool.h"
 
-mpo_encoder::mpo_encoder() : bytes_loaded(0), data(config::block_size), head(1) {
+mpu_encoder::mpu_encoder() : bytes_loaded(0), data(config::block_size), head(1) {
 }
 
-std::pair<std::byte *, size_t &> mpo_encoder::for_loading() {
+std::pair<std::byte *, size_t &> mpu_encoder::for_loading() {
     return {data.data(), bytes_loaded};
 }
 
-void mpo_encoder::process(auto future_limit, const auto NONE, auto i,
-                          auto &best_match_len, auto &best_match_pos) {
-    best_match_len = 1;
-    best_match_pos = NONE;
-
+void mpu_encoder::process(auto future_limit, const auto NONE, auto i,
+                          auto subblock_start) {
     const auto &data_buf = data.data();
+    auto       *ptr = subblock[i - subblock_start].data();
 
     for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
         const auto prefix_len = config::prefix_lengths[len];
@@ -37,19 +35,14 @@ void mpo_encoder::process(auto future_limit, const auto NONE, auto i,
              pos = prev_buf[pos]) {
             uint32_t match_len = strmatch::match_simd_loop(
                 future_limit, data_buf + pos, data_buf + i);
-            if (match_len >= prefix_len && match_len > best_match_len) {
-                best_match_len = match_len;
-                best_match_pos = pos;
+            if (ptr[match_len] == NONE || ptr[match_len] < pos) {
+                ptr[match_len] = pos;
             }
-        }
-
-        if (best_match_len >= prefix_len) {
-            break;
         }
     }
 }
 
-std::vector<token> mpo_encoder::encode() {
+std::vector<token> mpu_encoder::encode() {
     constexpr auto INF = std::numeric_limits<uint64_t>::max();
     constexpr auto NONE = std::numeric_limits<uint32_t>::max();
 
@@ -120,110 +113,127 @@ std::vector<token> mpo_encoder::encode() {
 
     write_stats_hashes();
 
-    constexpr uint32_t max_block_size = 1 << 20;
-    uint32_t           block_size = std::max(
-        uint32_t{1}, static_cast<uint32_t>(bytes_loaded / config::divisions));
-    if (block_size > max_block_size) {
-        block_size = max_block_size;
-    }
-    uint32_t blocks = (bytes_loaded + block_size - 1) / block_size;
-    uint32_t start = 0;
-
     config::print_message(std::format("Calculating tokens\n"));
     config::total_bytes = bytes_loaded + 1;
     config::processed_bytes = 0;
 
-    dp_best_match_len.resize(bytes_loaded, 1);
-    dp_best_match_pos.resize(bytes_loaded, NONE);
-
     worker_pool pool(config::divisions);
-    std::latch  finished(blocks);
-
-    while (start < bytes_loaded) {
-        uint32_t end = start + block_size - 1;
-        if (end >= bytes_loaded) {
-            end = bytes_loaded - 1;
-        }
-
-        pool.enqueue([&, start, end]() mutable {
-            while (start <= end) {
-                auto future_limit = std::min(static_cast<size_t>(end - start + 1),
-                                             config::future_limit);
-                uint32_t best_match_len, best_match_pos;
-                process(future_limit, NONE, start, best_match_len, best_match_pos);
-
-                dp_best_match_len[start] = best_match_len;
-                dp_best_match_pos[start] = best_match_pos;
-
-                start++;
-                config::processed_bytes++;
-            }
-            finished.count_down();
-        });
-
-        start = end + 1;
-    }
-
-    finished.wait();
-
-    using prevT = decltype(prev);
-    prevT().swap(prev);
-
-    config::print_message(std::format("Calculating dp\n"));
-    config::total_bytes = bytes_loaded;
-    config::processed_bytes = 0;
+    subblock.resize(config::subblock_size,
+                    std::vector<uint32_t>(config::future_limit + 1, NONE));
 
     dp_cost.resize(bytes_loaded + 1, INF);
     dp_from.resize(bytes_loaded + 1, NONE);
+    dp_pos.resize(bytes_loaded + 1, NONE);
     states.resize(bytes_loaded + 1, estimators::better::state{0, 0, 0});
     dp_cost[0] = 0;
     dp_from[0] = 0;
-    for (uint32_t i = 0; i < bytes_loaded; i++) {
-        auto cur_dp_cost = dp_cost[i];
+    dp_pos[0] = NONE;
 
-        uint32_t best_match_len = dp_best_match_len[i];
-        uint32_t best_match_pos = dp_best_match_pos[i];
+    for (uint32_t sbp = 0; sbp < bytes_loaded; sbp += config::subblock_size) {
+        for (auto &vec : subblock) {
+            vec.assign(config::future_limit + 1, NONE);
+        }
 
-        for (uint32_t ln = 2; ln <= best_match_len; ln++) {
-            uint64_t edge_cost =
-                ln == 1
-                    ? INF
-                    : estimators::better::cost(i - best_match_pos, ln,
-                                               states[i]);
-            // edge
-            if (ln != 1 &&
-                edge_cost < 1ll * estimators::better::literal_cost<uint64_t> *
-                                ln) {
-                uint64_t new_cost = cur_dp_cost + edge_cost;
-                if (dp_cost[i + ln] > new_cost) {
-                    dp_cost[i + ln] = new_cost;
-                    dp_from[i + ln] = i;
+        uint32_t bytes_left = bytes_loaded - sbp;
+        if (bytes_left > config::subblock_size) {
+            bytes_left = config::subblock_size;
+        }
+
+        constexpr uint32_t max_block_size = 1 << 20;
+        uint32_t           block_size = std::max(
+            uint32_t{1}, static_cast<uint32_t>(bytes_left / config::divisions));
+        if (block_size > max_block_size) {
+            block_size = max_block_size;
+        }
+        uint32_t blocks = (bytes_left + block_size - 1) / block_size;
+        uint32_t start = 0;
+
+        std::latch finished(blocks);
+
+        while (start < bytes_left) {
+            uint32_t end = start + block_size - 1;
+            if (end >= bytes_left) {
+                end = bytes_left - 1;
+            }
+
+            pool.enqueue([&, start, end]() mutable {
+                while (start <= end) {
+                    auto future_limit =
+                        std::min(static_cast<size_t>(bytes_loaded - (start + sbp)),
+                                 config::future_limit);
+                    process(future_limit, NONE, start + sbp, sbp);
+
+                    start++;
+                    config::processed_bytes++;
+                }
+                finished.count_down();
+            });
+
+            start = end + 1;
+        }
+
+        finished.wait();
+
+        // dp calculation
+        for (uint32_t i = sbp; i < bytes_loaded && i < sbp + config::subblock_size;
+             i++) {
+            auto *ptr = subblock[i - sbp].data();
+            auto  cur_dp_cost = dp_cost[i];
+            for (uint32_t match_len = config::future_limit; match_len >= 2;
+                 match_len--) {
+                if (i + match_len > bytes_loaded) [[unlikely]] {
+                    continue;
+                }
+                if (match_len != config::future_limit &&
+                    ptr[match_len + 1] != NONE &&
+                    (ptr[match_len] == NONE ||
+                     ptr[match_len] < ptr[match_len + 1])) {
+                    ptr[match_len] = ptr[match_len + 1];
+                }
+
+                uint64_t edge_cost =
+                    ptr[match_len] == NONE
+                        ? INF
+                        : estimators::better::cost(i - ptr[match_len], match_len,
+                                                   states[i]);
+                // edge
+                if (edge_cost <
+                    1ll * estimators::better::literal_cost<uint64_t> * match_len) {
+                    uint64_t new_cost = cur_dp_cost + edge_cost;
+                    if (dp_cost[i + match_len] > new_cost) {
+                        dp_cost[i + match_len] = new_cost;
+                        dp_from[i + match_len] = i;
+                        dp_pos[i + match_len] = ptr[match_len];
+                        const auto &src = states[i];
+                        auto       &s = states[i + match_len];
+                        s = estimators::better::state{i - ptr[match_len],
+                                                      src.dist_cache[0],
+                                                      src.dist_cache[1]};
+                    }
+                }
+            }
+
+            // literal
+            if (i + 1 <= bytes_loaded) {
+                uint64_t new_cost =
+                    cur_dp_cost + estimators::better::literal_cost<uint64_t>;
+                if (dp_cost[i + 1] > new_cost) {
+                    dp_cost[i + 1] = new_cost;
+                    dp_from[i + 1] = i;
                     const auto &src = states[i];
-                    auto       &s = states[i + ln];
-                    s = estimators::better::state{
-                        i - best_match_pos, src.dist_cache[0], src.dist_cache[1]};
+                    auto       &s = states[i + 1];
+                    s = src;
                 }
             }
         }
-
-        // literal
-        if (i + 1 <= bytes_loaded) {
-            uint64_t new_cost =
-                cur_dp_cost + estimators::better::literal_cost<uint64_t>;
-            if (dp_cost[i + 1] > new_cost) {
-                dp_cost[i + 1] = new_cost;
-                dp_from[i + 1] = i;
-                const auto &src = states[i];
-                auto       &s = states[i + 1];
-                s = src;
-            }
-        }
-        config::processed_bytes++;
     }
 
     {
         using T = decltype(prev);
         T{}.swap(prev);
+
+        using U = decltype(subblock);
+        U{}.swap(subblock);
     }
 
     config::print_message(std::format("Backtracking dp\n"));
@@ -246,7 +256,7 @@ std::vector<token> mpo_encoder::encode() {
             continue;
         }
         uint32_t best_match_len = i - came_from;
-        uint32_t best_match_pos = dp_best_match_pos[came_from];
+        uint32_t best_match_pos = dp_pos[i];
         if (best_match_len == 1) {
             throw std::runtime_error(
                 std::format("Optimal encoder has failed miserably at {} with "
@@ -266,7 +276,7 @@ std::vector<token> mpo_encoder::encode() {
     return tokens;
 }
 
-void mpo_encoder::write_stats_hashes() {
+void mpu_encoder::write_stats_hashes() {
     if (!config::stats) {
         return;
     }
@@ -380,7 +390,7 @@ void mpo_encoder::write_stats_hashes() {
     out.close();
 }
 
-void mpo_encoder::write_stats_tokens() {
+void mpu_encoder::write_stats_tokens() {
     if (!config::stats) {
         return;
     }
