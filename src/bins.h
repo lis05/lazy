@@ -76,7 +76,7 @@ struct bins_cfg {
         uint64_t base;
     };
 
-    static inline info get(uint64_t x) {
+    static constexpr inline info get(uint64_t x) {
         if (x <= MAX_RESERVED) {
             return info{x, 0, x};
         }
@@ -96,7 +96,7 @@ struct bins_cfg {
         return info{ctx, extra_bits, base};
     }
 
-    static inline info get_from_ctx(uint64_t c) {
+    static constexpr inline info get_from_ctx(uint64_t c) {
         if (c <= MAX_RESERVED) {
             return info{c, 0, c};
         }

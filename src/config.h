@@ -19,7 +19,6 @@ public:
     static size_t              divisions;
     static std::vector<size_t> prefix_lengths;
     static size_t              hash_bits;
-    static bool                ultra;
     static uint32_t            subblock_size;
     static std::string         format;
 

@@ -24,7 +24,6 @@ bool                 config::finished = false;
 std::atomic_uint64_t config::processed_bytes;
 uint64_t             config::total_bytes;
 std::string          config::format = "turbo2";
-bool                 config::ultra = false;
 uint32_t             config::subblock_size = 1024;
 int                  config::level = 0;
 
@@ -46,7 +45,6 @@ void config::print() {
                      "processed_bytes: {}\n"
                      "total_bytes: {}\n"
                      "format: {}\n"
-                     "ultra: {}\n"
                      "subblock_size: {}\n"
                      "level: {}\n"
                      "stats: {}",
@@ -55,8 +53,8 @@ void config::print() {
                      config::print_progress, config::divisions,
                      config::prefix_lengths, config::hash_bits, config::finished,
                      config::processed_bytes.load(), config::total_bytes,
-                     config::format, config::ultra, config::subblock_size,
-                     config::level, config::stats)
+                     config::format, config::subblock_size, config::level,
+                     config::stats)
               << std::endl;
 }
 

@@ -62,7 +62,7 @@ template <std::integral T>
 static constexpr T control_cost = 1;
 
 template <std::integral T>
-static constexpr T literal_cost = 8;
+static constexpr T literal_cost = 7;
 
 template <std::integral T>
 static inline T cost(T dist, T len, const state &s) {
@@ -75,11 +75,12 @@ static inline T cost(T dist, T len, const state &s) {
         return control_cost<T> + len_cost;
     } else {
         auto info = dist_bins::get(dist);
-        auto ctx_cost = full_bits - std::countl_zero(static_cast<T>(info.ctx));
+        constexpr auto ctx_cost =
+            full_bits - std::countl_zero(static_cast<T>(dist_bins::get(1e9).ctx));
         return control_cost<T> + ctx_cost + info.extra_bits + len_cost;
     }
 }
 }  // namespace _smart_but_freaking_sucks
 
-namespace better = _stupid_but_works;
+namespace better = _smart_but_freaking_sucks;
 }  // namespace estimators
