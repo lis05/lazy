@@ -123,7 +123,6 @@ int main(int argc, char **argv) {
     app.add_option("--bs", config::block_size, "Processing block size in bytes");
     app.add_option("--ws", config::window_size, "Dictionary window size in bytes");
     app.add_option("--fl", config::future_limit, "Lookahead buffer limit size");
-    app.add_option("--sb", config::subblock_size, "Subblock size");
     bool set_max_windows = false;
     app.add_flag(
         "--fit", set_max_windows,
@@ -154,6 +153,9 @@ int main(int argc, char **argv) {
     app.add_flag("-s", config::stats,
                  "Calculate various statistics and write them to ./stats/");
 
+    app.add_option("--lhc", config::load_hashchains,
+                   "Load & sync hashchains to file");
+
     CLI11_PARSE(app, argc, argv);
 
     std::ifstream in(input_file, std::ios::binary);
@@ -174,7 +176,6 @@ int main(int argc, char **argv) {
     if (set_max_windows) {
         config::block_size = config::window_size = input_file_size;
         config::future_limit = 256;
-        config::subblock_size = std::max(size_t{1024}, input_file_size / 256);
     }
 
     if (config::hash_bits > 32) {

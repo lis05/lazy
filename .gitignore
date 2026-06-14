@@ -10,3 +10,5 @@ benchmark-params/*.csv
 __pycache__
 stats
 datasets/enwik/enwik9
+.build_mode
+.hashchains*

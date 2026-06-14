@@ -10,22 +10,22 @@
 #include <mutex>
 #include <thread>
 
-size_t               config::block_size = 1 << 20;
-size_t               config::window_size = 1 << 16;
-size_t               config::future_limit = 1 << 12;
-uint64_t             config::max_matches = 0;
-size_t               config::jobs = 1;
-size_t               config::blocks = 1;
-bool                 config::print_progress = false;
-size_t               config::divisions = 1;
-std::vector<size_t>  config::prefix_lengths{};
-size_t               config::hash_bits = 0;
-bool                 config::finished = false;
-std::atomic_uint64_t config::processed_bytes;
-uint64_t             config::total_bytes;
-std::string          config::format = "turbo2";
-uint32_t             config::subblock_size = 1024;
-int                  config::level = 0;
+size_t                config::block_size = 1 << 20;
+size_t                config::window_size = 1 << 16;
+size_t                config::future_limit = 1 << 12;
+uint64_t              config::max_matches = 0;
+size_t                config::jobs = 1;
+size_t                config::blocks = 1;
+bool                  config::print_progress = false;
+size_t                config::divisions = 1;
+std::vector<uint32_t> config::prefix_lengths{};
+size_t                config::hash_bits = 0;
+bool                  config::finished = false;
+std::atomic_uint64_t  config::processed_bytes;
+uint64_t              config::total_bytes;
+std::string           config::load_hashchains = "";
+std::string           config::format = "turbo2";
+int                   config::level = 0;
 
 bool config::stats = false;
 
@@ -45,7 +45,6 @@ void config::print() {
                      "processed_bytes: {}\n"
                      "total_bytes: {}\n"
                      "format: {}\n"
-                     "subblock_size: {}\n"
                      "level: {}\n"
                      "stats: {}",
                      config::block_size, config::window_size, config::future_limit,
@@ -53,8 +52,7 @@ void config::print() {
                      config::print_progress, config::divisions,
                      config::prefix_lengths, config::hash_bits, config::finished,
                      config::processed_bytes.load(), config::total_bytes,
-                     config::format, config::subblock_size, config::level,
-                     config::stats)
+                     config::format, config::level, config::stats)
               << std::endl;
 }
 
@@ -76,9 +74,13 @@ static auto get_mb() {
 static std::mutex mtx;
 void              config::print_message(const std::string &message) {
     std::lock_guard<std::mutex> lock(mtx);
-    // Carriage return clears the progress line before writing a regular log message
+    static auto                 start_time = std::chrono::system_clock::now();
+    auto                        now = std::chrono::system_clock::now();
+
+    auto elapsed =
+        std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
     if (!message.empty() && message[0] != '\r') {
-        std::cout << "\r\33[2K" << message << std::flush;
+        std::cout << "\r\33[2K" << "[" << elapsed << "s] " << message << std::flush;
     } else {
         std::cout << message << std::flush;
     }
@@ -155,10 +157,10 @@ void config::report_progress() {
             (total_bytes > 0) ? (100.0 * current_processed / total_bytes) : 0.0;
 
         config::print_message(std::format(
-            "\r{:.1f}% ({} / {}, {:.2f} MB/s, "
+            "\r[{}s] {:.1f}% ({} / {}, {:.2f} MB/s, "
             "Elapsed: {}s, Total: {}s, MEM: {}MB)",
-            percentage, format_size(current_processed), format_size(total_bytes),
-            mb_s, elapsed, total_estimated, get_mb()));
+            elapsed, percentage, format_size(current_processed),
+            format_size(total_bytes), mb_s, elapsed, total_estimated, get_mb()));
 
     } while (!finished);
 

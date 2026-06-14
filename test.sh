@@ -1,4 +1,5 @@
 #!/bin/bash
+
 compressor=$1
 to_encode=$2
 
@@ -13,12 +14,20 @@ psize() {
     ls -l "$1" | awk '{print $5}'
 }
 
-rm /tmp/encoded /tmp/decoded 1>/dev/null 2>&1
+# Create unique temporary files for encoding and decoding
+encoded_tmp=$(mktemp)
+decoded_tmp=$(mktemp)
+
+# Ensure temporary files are removed on exit (success or failure)
+cleanup() {
+    rm -f "$encoded_tmp" "$decoded_tmp"
+}
+trap cleanup EXIT
 
 echo "Encoding..."
 exec 3>&1
 # Capture stderr directly into a variable without breaking pipelines
-enc_err=$({ /usr/bin/time -f "BENCHMARK: %M %e" $compressor -e -i $to_encode -o /tmp/encoded -t "$@"; } 2>&1 1>&3)
+enc_err=$({ /usr/bin/time -f "BENCHMARK: %M %e" "$compressor" -e -i "$to_encode" -o "$encoded_tmp" -t "$@"; } 2>&1 1>&3)
 enc_status=$?
 exec 3>&-
 
@@ -33,7 +42,7 @@ if [ $enc_status -ne 0 ]; then
     echo "$enc_err" | grep -v "BENCHMARK:"
     echo "---------------------"
     echo "To debug this failure, run:"
-    echo "gdb --args $compressor -e -i $to_encode -o /tmp/encoded -t $@"
+    echo "gdb --args $compressor -e -i $to_encode -o $encoded_tmp -t $@"
     exit 1
 fi
 echo "$enc_err" | grep -v "BENCHMARK:"
@@ -44,7 +53,7 @@ enc_sec=$(echo "$enc_err" | awk '/BENCHMARK:/ {print $3}')
 echo "Decoding..."
 exec 3>&1
 # Trailing encoder-specific flags ("$@") omitted for decoding compatibility
-dec_err=$({ /usr/bin/time -f "BENCHMARK: %M %e" $compressor -d -i /tmp/encoded -o /tmp/decoded; } 2>&1 1>&3)
+dec_err=$({ /usr/bin/time -f "BENCHMARK: %M %e" "$compressor" -d -i "$encoded_tmp" -o "$decoded_tmp"; } 2>&1 1>&3)
 dec_status=$?
 exec 3>&-
 
@@ -59,7 +68,7 @@ if [ $dec_status -ne 0 ]; then
     echo "$dec_err" | grep -v "BENCHMARK:"
     echo "---------------------"
     echo "To debug this failure, run:"
-    echo "gdb --args $compressor -d -i /tmp/encoded -o /tmp/decoded"
+    echo "gdb --args $compressor -d -i $encoded_tmp -o $decoded_tmp"
     exit 1
 fi
 echo "$dec_err" | grep -v "BENCHMARK:"
@@ -70,20 +79,20 @@ dec_sec=$(echo "$dec_err" | awk '/BENCHMARK:/ {print $3}')
 
 # Calculate compression ratio in %
 orig_size=$(psize "$to_encode")
-comp_size=$(psize /tmp/encoded)
+comp_size=$(psize "$encoded_tmp")
 ratio=$(awk -v c="$comp_size" -v o="$orig_size" 'BEGIN {printf "%.2f", (c/o)*100}')
 
 # Convert peak memory KB to MB
 enc_mb=$(awk -v k="$enc_kb" 'BEGIN {printf "%.2f", k/1024}')
 dec_mb=$(awk -v k="$dec_kb" 'BEGIN {printf "%.2f", k/1024}')
 
-echo "    Compression: $(phsize /tmp/encoded) ($(psize /tmp/encoded) bytes) / $(phsize $to_encode) [Ratio: ${ratio}%]"
+echo "    Compression: $(phsize "$encoded_tmp") ($(psize "$encoded_tmp") bytes) / $(phsize "$to_encode") [Ratio: ${ratio}%]"
 echo "    Execution Time (Enc): ${enc_sec} s"
 echo "    Execution Time (Dec): ${dec_sec} s"
 echo "    Max RAM Usage (Enc): ${enc_mb} MB"
 echo "    Max RAM Usage (Dec): ${dec_mb} MB"
 
-cmp $to_encode /tmp/decoded
+cmp "$to_encode" "$decoded_tmp"
 res=$?
 if [ "$res" == "0" ]; then
     echo "OK!"

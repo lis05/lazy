@@ -17,15 +17,159 @@ std::pair<std::byte *, size_t &> mpo_encoder::for_loading() {
     return {data.data(), bytes_loaded};
 }
 
+struct saved_hashchains {
+    uint32_t                           data_checksum;
+    std::vector<uint32_t>              prefix_lengths;
+    std::vector<std::vector<uint32_t>> prev;
+
+    friend auto &operator<<(auto &out, const saved_hashchains &h) {
+        out.write(reinterpret_cast<const char *>(&h.data_checksum),
+                  sizeof(h.data_checksum));
+
+        uint64_t pl_size = static_cast<uint64_t>(h.prefix_lengths.size());
+        out.write(reinterpret_cast<const char *>(&pl_size), sizeof(pl_size));
+        out.write(reinterpret_cast<const char *>(h.prefix_lengths.data()),
+                  pl_size * sizeof(uint32_t));
+
+        uint64_t prev_size = static_cast<uint64_t>(h.prev.size());
+        out.write(reinterpret_cast<const char *>(&prev_size), sizeof(prev_size));
+        for (const auto &p : h.prev) {
+            uint64_t p_size = static_cast<uint64_t>(p.size());
+            out.write(reinterpret_cast<const char *>(&p_size), sizeof(p_size));
+            out.write(reinterpret_cast<const char *>(p.data()),
+                      p_size * sizeof(uint32_t));
+        }
+        return out;
+    }
+
+    friend auto &operator>>(auto &in, saved_hashchains &h) {
+        in.read(reinterpret_cast<char *>(&h.data_checksum), sizeof(h.data_checksum));
+
+        uint64_t pl_size = 0;
+        in.read(reinterpret_cast<char *>(&pl_size), sizeof(pl_size));
+        h.prefix_lengths.resize(pl_size);
+        in.read(reinterpret_cast<char *>(h.prefix_lengths.data()),
+                pl_size * sizeof(uint32_t));
+
+        uint64_t prev_size = 0;
+        in.read(reinterpret_cast<char *>(&prev_size), sizeof(prev_size));
+        h.prev.resize(prev_size);
+        for (auto &p : h.prev) {
+            uint64_t p_size = 0;
+            in.read(reinterpret_cast<char *>(&p_size), sizeof(p_size));
+            p.resize(p_size);
+            in.read(reinterpret_cast<char *>(p.data()), p_size * sizeof(uint32_t));
+        }
+        return in;
+    }
+};
+
+bool mpo_encoder::load_hashchains() {
+    if (config::load_hashchains.empty()) {
+        return false;
+    }
+
+    config::print_message(std::format(
+        "Loading hashchains from {} (may take a while)\n", config::load_hashchains));
+    config::processed_bytes = 0;
+    config::total_bytes = 1;
+    std::ifstream in(config::load_hashchains, std::ios::binary);
+    if (!in) {
+        config::print_message("Hashchains file not found or cannot be opened.\n");
+        return false;
+    }
+
+    saved_hashchains h;
+    in >> h;
+
+    if (in.fail() && !in.eof()) {
+        throw std::runtime_error("load_hashchains: File read error");
+    }
+
+    uint32_t current_checksum =
+        static_cast<uint32_t>(hashes::hashn(data.data(), bytes_loaded));
+    if (h.data_checksum != current_checksum ||
+        !std::ranges::equal(h.prefix_lengths, config::prefix_lengths)) {
+        config::print_message(
+            "Hashchains checksum or prefix lengths mismatch. Regenerating "
+            "chains.\n");
+        return false;
+    }
+
+    this->prev = std::move(h.prev);
+    config::print_message("Hashchains loaded successfully.\n");
+    return true;
+}
+
+void mpo_encoder::sync_hashchains() {
+    if (config::load_hashchains.empty()) {
+        return;
+    }
+
+    uint32_t current_checksum =
+        static_cast<uint32_t>(hashes::hashn(data.data(), bytes_loaded));
+
+    std::ifstream in(config::load_hashchains, std::ios::binary);
+    if (in) {
+        uint32_t read_checksum = 0;
+        in.read(reinterpret_cast<char *>(&read_checksum), sizeof(read_checksum));
+
+        uint64_t pl_size = 0;
+        in.read(reinterpret_cast<char *>(&pl_size), sizeof(pl_size));
+        std::vector<uint32_t> read_prefix_lengths(pl_size);
+        in.read(reinterpret_cast<char *>(read_prefix_lengths.data()),
+                pl_size * sizeof(uint32_t));
+
+        if (!in.fail() && read_checksum == current_checksum &&
+            std::ranges::equal(read_prefix_lengths, config::prefix_lengths)) {
+            return;
+        }
+    }
+    in.close();
+
+    config::print_message(std::format("Saving hashchains to {} (may take a while)\n",
+                                      config::load_hashchains));
+    config::processed_bytes = 0;
+    config::total_bytes = 1;
+    std::ofstream out(config::load_hashchains, std::ios::binary);
+    if (!out) {
+        throw std::runtime_error("sync_hashchains: Failed to open file for writing");
+    }
+
+    out.write(reinterpret_cast<const char *>(&current_checksum), sizeof(current_checksum));
+
+    uint64_t pl_size = static_cast<uint64_t>(config::prefix_lengths.size());
+    out.write(reinterpret_cast<const char *>(&pl_size), sizeof(pl_size));
+    out.write(reinterpret_cast<const char *>(config::prefix_lengths.data()),
+              pl_size * sizeof(uint32_t));
+
+    uint64_t prev_size = static_cast<uint64_t>(this->prev.size());
+    out.write(reinterpret_cast<const char *>(&prev_size), sizeof(prev_size));
+    for (const auto &p : this->prev) {
+        uint64_t p_size = static_cast<uint64_t>(p.size());
+        out.write(reinterpret_cast<const char *>(&p_size), sizeof(p_size));
+        out.write(reinterpret_cast<const char *>(p.data()), p_size * sizeof(uint32_t));
+    }
+
+    if (!out) {
+        throw std::runtime_error("sync_hashchains: Failed to write data");
+    }
+    config::print_message("Hashchains saved successfully.\n");
+}
+
 void mpo_encoder::process(auto future_limit, const auto NONE, auto i,
-                          auto subblock_start) {
+                          auto *subblock_ptr) {
     const auto &data_buf = data.data();
-    auto       *ptr = subblock[i - subblock_start].data();
 
     for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
         const auto prefix_len = config::prefix_lengths[len];
         if (prefix_len > future_limit || i >= prev[len].size()) {
             continue;
+        }
+
+        if (len + 1 != config::prefix_lengths.size() &&
+            future_limit > config::prefix_lengths[len + 1]) {
+            future_limit = config::prefix_lengths[len + 1];
         }
 
         const auto &prev_buf = prev[len].data();
@@ -36,8 +180,11 @@ void mpo_encoder::process(auto future_limit, const auto NONE, auto i,
              pos = prev_buf[pos]) {
             uint32_t match_len = strmatch::match_simd_loop(
                 future_limit, data_buf + pos, data_buf + i);
-            if (ptr[match_len] == NONE || ptr[match_len] < pos) {
-                ptr[match_len] = pos;
+            if (subblock_ptr[match_len] == NONE || subblock_ptr[match_len] < pos) {
+                subblock_ptr[match_len] = pos;
+            }
+            if (match_len == future_limit) {
+                break;
             }
         }
     }
@@ -49,271 +196,294 @@ std::vector<token> mpo_encoder::encode() {
 
     worker_pool pool(config::divisions);
 
-    hashes.resize(bytes_loaded + 1);
-    if (config::hash_bits == 0) {
-        prev.resize(config::prefix_lengths.size());
+    if (!load_hashchains()) {
+        hashes.resize(bytes_loaded + 1);
+        if (config::hash_bits == 0) {
+            prev.resize(config::prefix_lengths.size());
 
-        for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
-            const auto prefix_len = config::prefix_lengths[len];
-            config::print_message(
-                std::format("Calculating hashes for prefix_len = {}\n", prefix_len));
-            config::total_bytes = bytes_loaded + 1;
-            config::processed_bytes = 0;
+            for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
+                const auto prefix_len = config::prefix_lengths[len];
+                config::print_message(std::format(
+                    "Calculating hashes for prefix_len = {}\n", prefix_len));
+                config::total_bytes = bytes_loaded + 1;
+                config::processed_bytes = 0;
 
-            if (bytes_loaded < prefix_len) {
-                throw std::runtime_error("Cannot compress");
-            }
-
-            auto       blocks = split_range(bytes_loaded - prefix_len + 1,
-                                            config::divisions, 1, bytes_loaded);
-            std::latch finished(blocks.size());
-            auto      *hashes_ptr = hashes.data();
-            auto      *data_ptr = data.data();
-
-            for (auto [start, end] : blocks) {
-                pool.enqueue([&, start, end]() mutable {
-                    while (start <= end) {
-                        hashes_ptr[start] =
-                            hashes::hashn(data_ptr + start, prefix_len);
-                        start++;
-                        config::processed_bytes++;
-                    }
-                    finished.count_down();
-                });
-            }
-
-            finished.wait();
-
-            config::print_message(std::format(
-                "Calculating hash chain for prefix_len = {}\n", prefix_len));
-            config::total_bytes = bytes_loaded + 1;
-            config::processed_bytes = 0;
-
-            auto &pr = prev[len];
-            pr.resize(bytes_loaded - prefix_len + 1);
-            auto *pr_ptr = pr.data();
-            for (size_t i = 0; i + prefix_len < bytes_loaded + 1; i++) {
-                auto h = hashes_ptr[i];
-                auto it = head_gp.find(h);
-                if (it == head_gp.end()) {
-                    pr_ptr[i] = NONE;
-                } else {
-                    pr_ptr[i] = it->second;
+                if (bytes_loaded < prefix_len) {
+                    throw std::runtime_error("Cannot compress");
                 }
-                head_gp[h] = i;
-                config::processed_bytes++;
-            }
-            head_gp.clear();
-        }
-        using T = decltype(head_gp);
-        T{}.swap(head_gp);
-    } else {
-        prev.resize(config::prefix_lengths.size());
-        head = table{config::hash_bits};
 
-        for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
-            const auto prefix_len = config::prefix_lengths[len];
-            config::print_message(
-                std::format("Calculating hashes for prefix_len = {}\n", prefix_len));
+                auto       blocks = split_range(bytes_loaded - prefix_len + 1,
+                                                config::divisions, 1, bytes_loaded);
+                std::latch finished(blocks.size());
+                auto      *hashes_ptr = hashes.data();
+                auto      *data_ptr = data.data();
 
-            if (bytes_loaded < prefix_len) {
-                throw std::runtime_error("Cannot compress");
-            }
-
-            config::total_bytes = bytes_loaded + 1;
-            config::processed_bytes = 0;
-
-            auto       blocks = split_range(bytes_loaded - prefix_len + 1,
-                                            config::divisions, 1, bytes_loaded);
-            std::latch finished(blocks.size());
-            auto      *hashes_ptr = hashes.data();
-            auto      *data_ptr = data.data();
-
-            for (auto [start, end] : blocks) {
-                pool.enqueue([&, start, end]() mutable {
-                    while (start <= end) {
-                        hashes_ptr[start] =
-                            hashes::hashn(data_ptr + start, prefix_len);
-                        start++;
-                        config::processed_bytes++;
-                    }
-                    finished.count_down();
-                });
-            }
-
-            finished.wait();
-
-            config::print_message(std::format(
-                "Calculating hash chain for prefix_len = {}\n", prefix_len));
-            config::total_bytes = bytes_loaded + 1;
-            config::processed_bytes = 0;
-
-            auto &pr = prev[len];
-            pr.resize(bytes_loaded - prefix_len + 1);
-            auto *pr_ptr = pr.data();
-            for (size_t i = 0; i + prefix_len < bytes_loaded + 1; i++) {
-                auto h = hashes_ptr[i];
-                if (!head.has(h)) {
-                    pr_ptr[i] = NONE;
-                } else {
-                    pr_ptr[i] = head.get(h);
+                for (auto [start, end] : blocks) {
+                    pool.enqueue([&, start, end]() mutable {
+                        while (start <= end) {
+                            hashes_ptr[start] =
+                                hashes::hashn(data_ptr + start, prefix_len);
+                            start++;
+                            config::processed_bytes++;
+                        }
+                        finished.count_down();
+                    });
                 }
-                head.insert(h, i);
-                config::processed_bytes++;
-            }
-            head.clear();
-        }
-        head.destroy();
-    }
 
-    {
-        using T = decltype(hashes);
-        T{}.swap(hashes);
+                finished.wait();
+
+                config::print_message(std::format(
+                    "Calculating hash chain for prefix_len = {}\n", prefix_len));
+                config::total_bytes = bytes_loaded + 1;
+                config::processed_bytes = 0;
+
+                auto &pr = prev[len];
+                pr.resize(bytes_loaded - prefix_len + 1);
+                auto *pr_ptr = pr.data();
+                for (size_t i = 0; i + prefix_len < bytes_loaded + 1; i++) {
+                    auto h = hashes_ptr[i];
+                    auto it = head_gp.find(h);
+                    if (it == head_gp.end()) {
+                        pr_ptr[i] = NONE;
+                    } else {
+                        pr_ptr[i] = it->second;
+                    }
+                    head_gp[h] = i;
+                    config::processed_bytes++;
+                }
+                head_gp.clear();
+            }
+            using T = decltype(head_gp);
+            T{}.swap(head_gp);
+        } else {
+            prev.resize(config::prefix_lengths.size());
+            head = table{config::hash_bits};
+
+            for (int len = config::prefix_lengths.size() - 1; len >= 0; len--) {
+                const auto prefix_len = config::prefix_lengths[len];
+                config::print_message(std::format(
+                    "Calculating hashes for prefix_len = {}\n", prefix_len));
+
+                if (bytes_loaded < prefix_len) {
+                    throw std::runtime_error("Cannot compress");
+                }
+
+                config::total_bytes = bytes_loaded + 1;
+                config::processed_bytes = 0;
+
+                auto       blocks = split_range(bytes_loaded - prefix_len + 1,
+                                                config::divisions, 1, bytes_loaded);
+                std::latch finished(blocks.size());
+                auto      *hashes_ptr = hashes.data();
+                auto      *data_ptr = data.data();
+
+                for (auto [start, end] : blocks) {
+                    pool.enqueue([&, start, end]() mutable {
+                        while (start <= end) {
+                            hashes_ptr[start] =
+                                hashes::hashn(data_ptr + start, prefix_len);
+                            start++;
+                            config::processed_bytes++;
+                        }
+                        finished.count_down();
+                    });
+                }
+
+                finished.wait();
+
+                config::print_message(std::format(
+                    "Calculating hash chain for prefix_len = {}\n", prefix_len));
+                config::total_bytes = bytes_loaded + 1;
+                config::processed_bytes = 0;
+
+                auto &pr = prev[len];
+                pr.resize(bytes_loaded - prefix_len + 1);
+                auto *pr_ptr = pr.data();
+                for (size_t i = 0; i + prefix_len < bytes_loaded + 1; i++) {
+                    auto h = hashes_ptr[i];
+                    if (!head.has(h)) {
+                        pr_ptr[i] = NONE;
+                    } else {
+                        pr_ptr[i] = head.get(h);
+                    }
+                    head.insert(h, i);
+                    config::processed_bytes++;
+                }
+                head.clear();
+            }
+            head.destroy();
+        }
+
+        {
+            using T = decltype(hashes);
+            T{}.swap(hashes);
+        }
+
+        sync_hashchains();
     }
 
     write_stats_hashes();
 
-    config::print_message(std::format("Calculating tokens\n"));
+    config::print_message(std::format("Calculating tokens + dp\n"));
     config::total_bytes = bytes_loaded + 1;
     config::processed_bytes = 0;
 
-    subblock.resize(config::subblock_size,
-                    std::vector<uint32_t>(config::future_limit + 1, NONE));
+    auto blocks = split_range(bytes_loaded, config::divisions, 1, bytes_loaded);
+    std::latch finished(blocks.size());
 
-    dp_cost.resize(bytes_loaded + 1, INF);
-    dp_from.resize(bytes_loaded + 1, NONE);
-    dp_pos.resize(bytes_loaded + 1, NONE);
+    dp_cost.resize(blocks.size());
+    dp_from.resize(blocks.size());
+    dp_pos.resize(blocks.size());
     states.resize(bytes_loaded + 1, estimators::better::state{0, 0, 0});
-    dp_cost[0] = 0;
-    dp_from[0] = 0;
-    dp_pos[0] = NONE;
 
-    for (uint32_t sbp = 0; sbp < bytes_loaded; sbp += config::subblock_size) {
-        for (auto &vec : subblock) {
-            vec.assign(config::future_limit + 1, NONE);
-        }
+    size_t block_index = 0;
+    for (auto [start, end] : blocks) {
+        pool.enqueue([&, start, end, block_index]() mutable {
+            end++;
+            dp_cost[block_index].resize(end - start + 1, INF);
+            dp_from[block_index].resize(end - start + 1, NONE);
+            dp_pos[block_index].resize(end - start + 1, NONE);
 
-        uint32_t bytes_left = bytes_loaded - sbp;
-        if (bytes_left > config::subblock_size) {
-            bytes_left = config::subblock_size;
-        }
+            auto *dp_cost_ptr = dp_cost[block_index].data();
+            auto *dp_from_ptr = dp_from[block_index].data();
+            auto *dp_pos_ptr = dp_pos[block_index].data();
 
-        auto       blocks = split_range(bytes_left, config::divisions, 1, 1 << 20);
-        std::latch finished(blocks.size());
+            std::vector<uint32_t> subblock(config::future_limit + 1, NONE);
+            auto                  subblock_ptr = subblock.data();
 
-        for (auto [start, end] : blocks) {
-            pool.enqueue([&, start, end]() mutable {
-                while (start <= end) {
-                    auto future_limit =
-                        std::min(static_cast<size_t>(bytes_loaded - (start + sbp)),
-                                 config::future_limit);
-                    process(future_limit, NONE, start + sbp, sbp);
+            int i = start;
 
-                    start++;
-                    config::processed_bytes++;
-                }
-                finished.count_down();
-            });
-        }
+            dp_cost_ptr[i - start] = 0;
+            dp_from_ptr[i - start] = start;
+            dp_pos_ptr[i - start] = NONE;
+            while (i < end) {
+                auto future_limit =
+                    std::min(static_cast<size_t>(end - i), config::future_limit);
+                std::fill(subblock.begin(), subblock.end(), NONE);
+                process(future_limit, NONE, i, subblock_ptr);
 
-        finished.wait();
+                auto cur_dp_cost_ptr = dp_cost_ptr[i - start];
+                for (uint32_t match_len = future_limit; match_len >= 2;
+                     match_len--) {
+                    if (match_len != future_limit &&
+                        subblock_ptr[match_len + 1] != NONE &&
+                        (subblock_ptr[match_len] == NONE ||
+                         subblock_ptr[match_len] < subblock_ptr[match_len + 1])) {
+                        subblock_ptr[match_len] = subblock_ptr[match_len + 1];
+                    }
 
-        // dp calculation
-        for (uint32_t i = sbp; i < bytes_loaded && i < sbp + config::subblock_size;
-             i++) {
-            auto *ptr = subblock[i - sbp].data();
-            auto  cur_dp_cost = dp_cost[i];
-            for (uint32_t match_len = config::future_limit; match_len >= 2;
-                 match_len--) {
-                if (i + match_len > bytes_loaded) [[unlikely]] {
-                    continue;
-                }
-                if (match_len != config::future_limit &&
-                    ptr[match_len + 1] != NONE &&
-                    (ptr[match_len] == NONE ||
-                     ptr[match_len] < ptr[match_len + 1])) {
-                    ptr[match_len] = ptr[match_len + 1];
-                }
+                    if (subblock_ptr[match_len] == NONE) {
+                        continue;
+                    }
 
-                uint64_t edge_cost =
-                    ptr[match_len] == NONE
-                        ? INF
-                        : estimators::better::cost(i - ptr[match_len], match_len,
-                                                   states[i]);
-                // edge
-                if (edge_cost <
-                    1ll * estimators::better::literal_cost<uint64_t> * match_len) {
-                    uint64_t new_cost = cur_dp_cost + edge_cost;
-                    if (dp_cost[i + match_len] > new_cost) {
-                        dp_cost[i + match_len] = new_cost;
-                        dp_from[i + match_len] = i;
-                        dp_pos[i + match_len] = ptr[match_len];
-                        const auto &src = states[i];
-                        auto       &s = states[i + match_len];
-                        s = estimators::better::state{i - ptr[match_len],
-                                                      src.dist_cache[0],
-                                                      src.dist_cache[1]};
+                    uint64_t edge_cost = estimators::better::cost(
+                        i - subblock_ptr[match_len], match_len, states[i]);
+                    // edge
+                    if (edge_cost < 1ll *
+                                        estimators::better::literal_cost<uint64_t> *
+                                        match_len &&
+                        i + match_len < end) {
+                        uint64_t new_cost = cur_dp_cost_ptr + edge_cost;
+                        if (dp_cost_ptr[i + match_len - start] > new_cost) {
+                            dp_cost_ptr[i + match_len - start] = new_cost;
+                            dp_from_ptr[i + match_len - start] = i;
+                            dp_pos_ptr[i + match_len - start] =
+                                subblock_ptr[match_len];
+                            const auto &src = states[i];
+                            auto       &s = states[i + match_len];
+                            s = estimators::better::state{
+                                static_cast<uint32_t>(i - subblock_ptr[match_len]),
+                                src.dist_cache[0], src.dist_cache[1]};
+                        }
                     }
                 }
+
+                // literal
+                if (i + 1 <= end) {
+                    uint64_t new_cost =
+                        cur_dp_cost_ptr + estimators::better::literal_cost<uint64_t>;
+                    if (dp_cost_ptr[i + 1 - start] > new_cost) {
+                        dp_cost_ptr[i + 1 - start] = new_cost;
+                        dp_from_ptr[i + 1 - start] = i;
+                        const auto &src = states[i];
+                        auto       &s = states[i + 1];
+                        s = src;
+                    }
+                }
+
+                config::processed_bytes++;
+                i++;
             }
 
-            // literal
-            if (i + 1 <= bytes_loaded) {
-                uint64_t new_cost =
-                    cur_dp_cost + estimators::better::literal_cost<uint64_t>;
-                if (dp_cost[i + 1] > new_cost) {
-                    dp_cost[i + 1] = new_cost;
-                    dp_from[i + 1] = i;
-                    const auto &src = states[i];
-                    auto       &s = states[i + 1];
-                    s = src;
-                }
-            }
-        }
+            finished.count_down();
+        });
+        block_index++;
     }
 
+    finished.wait();
     {
         using T = decltype(prev);
         T{}.swap(prev);
-
-        using U = decltype(subblock);
-        U{}.swap(subblock);
     }
 
     config::print_message(std::format("Backtracking dp\n"));
     config::total_bytes = bytes_loaded;
     config::processed_bytes = 0;
 
-    uint32_t i = bytes_loaded;
-    while (i > 0) {
-        if (dp_cost[i] == INF) {
-            throw std::runtime_error(
-                std::format("Optimal encoder has failed at {}", i));
-        }
+    std::reverse(blocks.begin(), blocks.end());
+    block_index = blocks.size() - 1;
 
-        uint32_t came_from = dp_from[i];
-        if (came_from + 1 == i) {
-            // literal
-            tokens.push_back(data[came_from]);
-            i = came_from;
-            config::processed_bytes++;
-            continue;
-        }
-        uint32_t best_match_len = i - came_from;
-        uint32_t best_match_pos = dp_pos[i];
-        if (best_match_len == 1) {
-            throw std::runtime_error(
-                std::format("Optimal encoder has failed miserably at {} with "
-                            "best_match_len={}",
-                            i, best_match_len));
-        }
+    std::vector<std::vector<token>> t(blocks.size());
+    std::latch                      finished_t(blocks.size());
+    for (auto [start, end] : blocks) {
+        pool.enqueue([&, start, end, block_index]() mutable {
+            end++;
+            auto i = end;
+            while (i > start) {
+                if (dp_cost[block_index][i - start] == INF) {
+                    throw std::runtime_error(
+                        std::format("Optimal encoder has failed at {}", i));
+                }
 
-        tokens.push_back(match{came_from - best_match_pos, best_match_len});
-        config::processed_bytes += i - came_from;
-        i = came_from;
+                uint32_t came_from = dp_from[block_index][i - start];
+                if (came_from + 1 == i) {
+                    // literal
+                    t[block_index].push_back(data[came_from]);
+                    i = came_from;
+                    config::processed_bytes++;
+                    continue;
+                }
+                uint32_t best_match_len = i - came_from;
+                uint32_t best_match_pos = dp_pos[block_index][i - start];
+                if (best_match_len == 1) {
+                    throw std::runtime_error(std::format(
+                        "Optimal encoder has failed miserably at {} with "
+                        "best_match_len={}",
+                        i, best_match_len));
+                }
+
+                t[block_index].push_back(
+                    match{came_from - best_match_pos, best_match_len});
+                config::processed_bytes += i - came_from;
+                i = came_from;
+            }
+
+            if (i != start) {
+                throw std::runtime_error(std::format("Optimal encoder has failed"));
+            }
+            finished_t.count_down();
+        });
+        block_index--;
     }
 
-    std::reverse(tokens.begin(), tokens.end());
+    finished_t.wait();
+
+    for (auto &e : t) {
+        std::reverse(e.begin(), e.end());
+        for (auto &ee : e) {
+            tokens.push_back(ee);
+        }
+    }
 
     write_stats_tokens();
 
@@ -346,8 +516,6 @@ void mpo_encoder::write_stats_hashes() {
 
         const auto &pr = prev[len];
 
-        // Using uint8_t instead of vector<bool> to allow thread-safe atomic
-        // references
         std::vector<uint8_t> visited(bytes_loaded, 0);
         std::mutex           count_mutex;
 

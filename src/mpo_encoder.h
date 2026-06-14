@@ -31,11 +31,9 @@ class mpo_encoder {
     table                                         head;
     std::vector<std::vector<uint32_t>>            prev;
 
-    std::vector<std::vector<uint32_t>> subblock;
-
-    std::vector<uint64_t> dp_cost;
-    std::vector<uint32_t> dp_from;
-    std::vector<uint32_t> dp_pos;
+    std::vector<std::vector<uint64_t>> dp_cost;
+    std::vector<std::vector<uint32_t>> dp_from;
+    std::vector<std::vector<uint32_t>> dp_pos;
 
 public:
     mpo_encoder();
@@ -43,7 +41,9 @@ public:
     std::pair<std::byte *, size_t &> for_loading();
 
 private:
-    void process(auto future_limit, const auto NONE, auto i, auto subblock_start);
+    bool load_hashchains();
+    void sync_hashchains();
+    void process(auto future_limit, const auto NONE, auto i, auto *subblock_ptr);
 
     void write_stats_hashes();
     void write_stats_tokens();
