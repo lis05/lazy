@@ -25,11 +25,16 @@ std::atomic_uint64_t  config::processed_bytes;
 uint64_t              config::total_bytes;
 std::string           config::load_hashchains = "";
 std::string           config::format = "turbo2";
-int                   config::level = 0;
+bool                  config::level[15] = {};
 
 bool config::stats = false;
 
 void config::print() {
+    int l = 0;
+    for (int i = 0; i < sizeof(config::level) / sizeof(config::level[0]); i++) {
+        if (level[i])
+            l = i;
+    }
     std::cout << std::format(
                      "block_size: {}\n"
                      "window_size: {}\n"
@@ -52,7 +57,7 @@ void config::print() {
                      config::print_progress, config::divisions,
                      config::prefix_lengths, config::hash_bits, config::finished,
                      config::processed_bytes.load(), config::total_bytes,
-                     config::format, config::level, config::stats)
+                     config::format, l, config::stats)
               << std::endl;
 }
 
@@ -167,12 +172,94 @@ void config::report_progress() {
     config::print_message("\r\33[2KProgress complete.\n");
 }
 
-void config::apply_level(int l, size_t file_size) {
+void config::apply_level(size_t file_size) {
     auto cores = static_cast<size_t>(std::thread::hardware_concurrency());
 
-    if (l == 0) {
+    if (level[1]) {
+        block_size = file_size;
+        window_size = file_size;
+        future_limit = 256;
+        max_matches = 200;
+        divisions = cores;
+        prefix_lengths = std::vector<uint32_t>{5};
         return;
-    } else {
-        throw std::runtime_error("Invalid level: " + std::to_string(l));
-    }
+    };
+
+    if (level[2]) {
+        block_size = file_size;
+        window_size = file_size;
+        future_limit = 256;
+        max_matches = 20;
+        divisions = cores;
+        prefix_lengths = std::vector<uint32_t>{5,6,8};
+        return;
+    };
+
+    if (level[3]) {
+        block_size = file_size;
+        window_size = file_size;
+        future_limit = 256;
+        max_matches = 200;
+        divisions = cores;
+        prefix_lengths = std::vector<uint32_t>{5,6,8};
+        return;
+    };
+
+    if (level[4]) {
+        block_size = file_size;
+        window_size = file_size;
+        future_limit = 256;
+        max_matches = 20;
+        divisions = cores;
+        prefix_lengths = std::vector<uint32_t>{5,6,8,12,16,20,24};
+        return;
+    };
+
+    if (level[5]) {
+        block_size = file_size;
+        window_size = file_size;
+        future_limit = 256;
+        max_matches = 200;
+        divisions = cores;
+        prefix_lengths = std::vector<uint32_t>{5,6,8,12,16,20,24};
+        return;
+    };
+
+    if (level[6]) {
+        block_size = file_size;
+        window_size = file_size;
+        future_limit = 256;
+        max_matches = 2000;
+        divisions = cores;
+        prefix_lengths = std::vector<uint32_t>{5,6,8,12,16,20,24};
+        return;
+    };
+
+    if (level[7]) {
+        block_size = file_size;
+        window_size = file_size;
+        future_limit = 256;
+        max_matches = 0;
+        divisions = cores;
+        prefix_lengths = std::vector<uint32_t>{5};
+        return;
+    };
+
+    if (level[8]) {
+        block_size = file_size;
+        window_size = file_size;
+        future_limit = 256;
+        max_matches = 0;
+        divisions = cores;
+        prefix_lengths = std::vector<uint32_t>{5};
+        hash_bits = 32;
+        return;
+    };
+
+    block_size = file_size;
+    window_size = file_size;
+    future_limit = 256;
+    max_matches = 20;
+    divisions = cores;
+    prefix_lengths = std::vector<uint32_t>{5};
 }

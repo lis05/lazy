@@ -1,9 +1,0 @@
-compressor | file | ratio in % | compression time | decompression time | compression memory in MB | decompression memory in MB
-brotli | enwik9 | 22.33 | 1598.96 | 3.17 | 206.84 | 19.14
-xz | enwik9 | 21.57 | 177.95 | 2.09 | 4526.33 | 1426.59
-zstd | enwik9 | 21.37 | 533.48 | 1.39 | 2543.38 | 132.44
-lzmpo | enwik9 | 21.15 | 897.40 | 21.19 | 29554.61 | 2234.29
-brotli | enwik8 | 25.74 | 167.01 | 0.33 | 203.10 | 19.19
-xz | enwik8 | 24.87 | 81.13 | 0.81 | 792.50 | 185.27
-zstd | enwik8 | 25.27 | 91.26 | 0.18 | 830.23 | 99.49
-lzmpo | enwik8 | 26.21 | 89.04 | 2.55 | 5947.07 | 315.18

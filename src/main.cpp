@@ -104,57 +104,113 @@ static void decode(auto &in, auto &out, auto &pp) {
     pp.join();
 }
 
+class CleanFormatter : public CLI::Formatter {
+public:
+    CleanFormatter() : Formatter() {
+        enable_option_defaults(false);
+    }
+
+    std::string make_option(const CLI::Option *opt,
+                            bool               is_positional) const override {
+        std::string output = Formatter::make_option(opt, is_positional);
+
+        size_t pos = output.find(" [0]");
+        if (pos != std::string::npos) {
+            output.erase(pos, 4);
+        }
+        return output;
+    }
+
+    std::string make_group(std::string group, bool is_positional,
+                           std::vector<const CLI::Option *> opts) const override {
+        std::string output = Formatter::make_group(group, is_positional, opts);
+        if (!output.empty()) {
+            output += "\n";
+        }
+        return output;
+    }
+};
+
 int main(int argc, char **argv) {
     CLI::App app{"lzmpo: LZ77 multiple prefixes optimal compressor"};
+    app.formatter(std::make_shared<CleanFormatter>());
     argv = app.ensure_utf8(argv);
 
+    auto main_group = app.add_option_group("Input/output files and running mode");
     bool run_encoder = false;
-    app.add_flag("-e", run_encoder, "Run encoder");
-
     bool run_decoder = false;
-    app.add_flag("-d", run_decoder, "Run decoder");
-
     std::string input_file = "";
-    app.add_option("-i", input_file, "Input file")->required();
-
     std::string output_file = "";
-    app.add_option("-o", output_file, "Output file")->required();
+    main_group->add_flag("-e", run_encoder, "Run encoder");
+    main_group->add_flag("-d", run_decoder, "Run decoder");
+    main_group->add_option("-i", input_file, "Input file")->required();
+    main_group->add_option("-o", output_file, "Output file")->required();
 
-    app.add_option("--bs", config::block_size, "Processing block size in bytes");
-    app.add_option("--ws", config::window_size, "Dictionary window size in bytes");
-    app.add_option("--fl", config::future_limit, "Lookahead buffer limit size");
+    auto level_group = app.add_option_group(
+        "Compression levels",
+        "Each subsequent level results in slower runtime, better compression ratio, "
+        "and greater memory usage than the previous level");
+    level_group->add_flag("-0", config::level[0],
+                          "Same as --fit --mm 20 -k<supported threads> --pl 5");
+    level_group->add_flag("-1", config::level[1],
+                          "Same as --fit --mm 200 -k<supported threads> --pl 5");
+    level_group->add_flag("-2", config::level[2],
+                          "Same as --fit --mm 20 -k<supported threads> --pl 5,6,8");
+    level_group->add_flag("-3", config::level[3],
+                          "Same as --fit --mm 200 -k<supported threads> --pl 5,6,8");
+    level_group->add_flag(
+        "-4", config::level[4],
+        "Same as --fit --mm 20 -k<supported threads> --pl 5,6,8,12,16,20,24");
+    level_group->add_flag(
+        "-5", config::level[5],
+        "Same as --fit --mm 200 -k<supported threads> --pl 5,6,8,12,16,20,24");
+    level_group->add_flag(
+        "-6", config::level[6],
+        "Same as --fit --mm 2000 -k<supported threads> --pl 5,6,8,12,16,20,24");
+    level_group->add_flag("-7", config::level[7],
+                          "Same as --fit --mm 0 -k<supported threads> --pl 5");
+    level_group->add_flag("-8", config::level[8],
+                          "Same as --fit --mm 0 -k<supported threads> --pl 5 -b32");
+
+    auto advanced_group = app.add_option_group("Advanced flags");
     bool set_max_windows = false;
-    app.add_flag(
-        "--fit", set_max_windows,
-        "Set --bs,--ws,--fl to fit the entire file and --sb to be reasonable");
-    app.add_option("--mm", config::max_matches, "Max matches before acceptation");
-    app.add_option("-k", config::divisions,
-                   "Number of workers to process a single block");
-    app.add_option("--pl", config::prefix_lengths,
-                   "List of prefix lengths for the encoder to check")
+    advanced_group->add_option("--bs", config::block_size,
+                               "Processing block size in bytes");
+    advanced_group->add_option("--ws", config::window_size,
+                               "Dictionary window size in bytes");
+    advanced_group->add_option("--fl", config::future_limit,
+                               "Lookahead buffer limit size");
+    advanced_group->add_flag("--fit", set_max_windows,
+                             "Set --bs,--ws,--fl to fit the entire file");
+    advanced_group->add_option("--mm", config::max_matches,
+                               "Max matches to check for each prefix length");
+    advanced_group->add_option("-k", config::divisions,
+                               "Number of threads to process a single block");
+    advanced_group
+        ->add_option("--pl", config::prefix_lengths,
+                     "Comma-separated list of prefix lengths")
         ->delimiter(',');
-    app.add_option("-b", config::hash_bits,
-                   "How many bits will be taken when calculating a hash. If 0, a "
-                   "hash map will be used. If not 0, a table of size 2^<bits> will "
-                   "be used. Should not exceed 32");
+    advanced_group->add_option(
+        "-b", config::hash_bits,
+        "Bits per hash. If 0, a hash map will be used. If not "
+        "0, a table of size 2^<bits> will "
+        "be used. Should not exceed 32");
 
+    auto misc_group = app.add_option_group("Miscellaneous");
     bool measure_time = false;
-    app.add_flag("-m", measure_time, "Measure execution time");
-
     bool print_total_tokens = false;
-    app.add_flag("-t", print_total_tokens,
-                 "Print total tokens produced (if encoding)");
-
-    app.add_flag("-p", config::print_progress, "Print progress");
-
     bool print_config = false;
-    app.add_flag("-c", print_config, "Print config and exit");
+    misc_group->add_flag("-m", measure_time, "Measure execution time");
 
-    app.add_flag("-s", config::stats,
-                 "Calculate various statistics and write them to ./stats/");
-
-    app.add_option("--lhc", config::load_hashchains,
-                   "Load & sync hashchains to file");
+    misc_group->add_flag("-t", print_total_tokens,
+                         "Print total tokens produced (if encoding)");
+    misc_group->add_flag("-p", config::print_progress, "Print progress");
+    misc_group->add_flag("-c", print_config, "Print config and exit");
+    misc_group->add_flag("-s", config::stats,
+                         "Calculate various statistics and write them to ./stats/");
+    misc_group->add_option(
+        "--lhc", config::load_hashchains,
+        "Load & sync hashchains to file. Can speed up on subsequent runs");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -171,8 +227,6 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    config::apply_level(config::level, input_file_size);
-
     if (set_max_windows) {
         config::block_size = config::window_size = input_file_size;
         config::future_limit = 256;
@@ -181,6 +235,8 @@ int main(int argc, char **argv) {
     if (config::hash_bits > 32) {
         std::cerr << "Invalid number of hash bits" << std::endl;
     }
+
+    config::apply_level(input_file_size);
 
     if (print_config) {
         config::print();

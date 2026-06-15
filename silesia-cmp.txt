@@ -1,12 +1,12 @@
 compressor | file | ratio in % | compression time | decompression time | compression memory in MB | decompression memory in MB
-brotli | ooffice | 40.292224 | 11.28 | 0.03 | 94.28 | 9.25
-xz | ooffice | 39.446493 | 2.17 | 0.07 | 127.82 | 16.22
-zstd | ooffice | 42.184249 | 2.05 | 0.01 | 141.15 | 9.90
-lzmpo | ooffice | 43.292830 | 5.79 | 0.31 | 280.92 | 56.98
-brotli | xml | 8.055069 | 4.52 | 0.01 | 67.85 | 7.95
-xz | xml | 8.479780 | 0.72 | 0.01 | 113.44 | 12.97
-zstd | xml | 8.449773 | 2.38 | 0.00 | 138.21 | 8.36
-lzmpo | xml | 8.454973 | 17.19 | 0.05 | 182.29 | 13.04
-brotli | mr | 28.314707 | 14.15 | 0.03 | 126.82 | 12.38
-xz | mr | 27.583996 | 3.79 | 0.10 | 156.94 | 24.09
-zstd | mr | 31.115612 | 4.64 | 0.01 | 273.39 | 13.53
+brotli_q0 | ooffice | 57.780365 | 0.02 | 0.02 | 3.74 | 10.96
+brotli_q1 | ooffice | 56.994401 | 0.02 | 0.02 | 4.15 | 10.84
+brotli_q2 | ooffice | 51.510957 | 0.05 | 0.02 | 9.70 | 10.96
+brotli_q3 | ooffice | 51.170867 | 0.05 | 0.02 | 9.40 | 10.99
+brotli_q4 | ooffice | 51.932303 | 0.11 | 0.02 | 20.46 | 9.34
+brotli_q5 | ooffice | 46.434864 | 0.26 | 0.02 | 28.52 | 9.52
+brotli_q6 | ooffice | 45.824968 | 0.32 | 0.02 | 30.35 | 9.34
+brotli_q7 | ooffice | 45.332412 | 0.55 | 0.02 | 34.65 | 9.52
+brotli_q8 | ooffice | 45.139375 | 0.79 | 0.02 | 42.18 | 9.52
+brotli_q9 | ooffice | 44.989981 | 0.86 | 0.02 | 57.32 | 9.52
+brotli_q10 | ooffice | 41.272720 | 5.88 | 0.03 | 91.37 | 9.35

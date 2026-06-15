@@ -24,7 +24,7 @@ public:
 
     static bool stats;
 
-    static int level;
+    static bool level[15];
 
     static bool                 finished;
     static std::atomic_uint64_t processed_bytes;
@@ -34,5 +34,5 @@ public:
     static void print();
     static void finish();
     static void report_progress();
-    static void apply_level(int l, size_t file_size);
+    static void apply_level(size_t file_size);
 };
