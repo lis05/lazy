@@ -363,7 +363,7 @@ std::vector<token> mpo_encoder::encode() {
                 process(future_limit, NONE, i, subblock_ptr);
 
                 auto cur_dp_cost_ptr = dp_cost_ptr[i - start];
-                for (uint32_t match_len = future_limit; match_len >= 2;
+                for (uint32_t match_len = future_limit; match_len >= 5;
                      match_len--) {
                     if (match_len != future_limit &&
                         subblock_ptr[match_len + 1] != NONE &&

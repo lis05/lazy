@@ -9,8 +9,8 @@ TARGET_DIR="$1"
 LZMPO_BIN="./build/lzmpo"
 
 # Configure your custom lzmpo flags here (-k 16 assigns 16 workers)
-LZMPO_ENC_FLAGS="--max -k16 --pl 6,8,12,16,20,24 --mm 200"
-LZMPO_DEC_FLAGS="--max"
+LZMPO_ENC_FLAGS="--fit -k16 --pl 5 --mm 0"
+LZMPO_DEC_FLAGS="--fit"
 
 # Create a temporary directory for all output and time files
 TMP_DIR=$(mktemp -d)
@@ -79,7 +79,7 @@ find "$TARGET_DIR" -type f ! -name "*.brotli" ! -name "*.xz" ! -name "*.zstd" ! 
         # Safely calculate sizes and ratios
         COMP_SIZE=$(stat -c %s "$COMP_FILE" 2>/dev/null)
         if [ -n "$COMP_SIZE" ]; then
-            RATIO=$(awk "BEGIN {printf \"%.2f\", ($COMP_SIZE / $ORIG_SIZE) * 100}")
+            RATIO=$(awk "BEGIN {printf \"%.6f\", ($COMP_SIZE / $ORIG_SIZE) * 100}")
         else
             RATIO="ERR"
         fi
