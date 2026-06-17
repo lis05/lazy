@@ -245,17 +245,6 @@ void config::apply_level(size_t file_size) {
         return;
     };
 
-    if (level[8]) {
-        block_size = file_size;
-        window_size = file_size;
-        future_limit = 256;
-        max_matches = 0;
-        divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5};
-        hash_bits = 32;
-        return;
-    };
-
     block_size = file_size;
     window_size = file_size;
     future_limit = 256;

@@ -1,4 +1,4 @@
-#lzmpo - LZ77 multiple prefixes optimal compressor
+# lzmpo - LZ77 multiple prefixes optimal compressor
 
 lzmpo is an experimental compressor with modified LZ77 frontend and entropy encoded
 (via Turbo-Range-Coder) backend. It is designed to give good ratios on big files
@@ -24,7 +24,7 @@ be used for compressing smaller files, while -b32 is best for compressing huge f
 
 Instead of taking the best match, lzmpo does dynamic programming, which allows it to
 pick the globally optimal path to cover the entire file with matches. Cost of a match
-is estimated by a function that is somewhat close to the backend representation's price of a match. It works by calculating how many bits a match would take based on its lengths, distance, and whether it has the same distance as any of the last 3 matches.
+is estimated by a function that is somewhat close to the backend representation's price of a match. It works by calculating how many bits a match would take based on its lengths, distance, and whether it has the same distance as any of the last 3 matches. The distance cache costs 12 \* N bytes.
 Matches cannot be longer than 256 bytes, so the dp calculates the closest match of size
 X for each X=5...256, and then updates its states using that match. Lower bound 5 is
 derived from empirical data, as setting it to 4 actually decreases the compression
@@ -70,4 +70,7 @@ smaller distances to be represented by fewer bits. Each group has: context (1-by
 index of the group), base and extra distance bits of distance - base.
 Turbo-Range-Coder is used for this with all streams but extra bits being encoded via
 rcmrrssdec using dual-predictor with parameters 4 and 7.
+
+# Results
+My personal goal was beating zstd -22 on enwik9, and so the results are as follows:
 

@@ -3,26 +3,68 @@
 set -u
 
 if [ -z "${1:-}" ]; then
-    echo "Usage: $0 <directory>"
+    echo "Usage: $0 <directory> [results_file]"
     exit 1
 fi
 
 TARGET_DIR="$1"
+RESULTS_FILE="${2:-}"
 LZMPO_BIN="./build/lzmpo"
 
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-echo "compressor | file | ratio in % | compression time | decompression time | compression memory in MB | decompression memory in MB"
+if [ -z "$RESULTS_FILE" ] || [ ! -s "$RESULTS_FILE" ]; then
+    echo "compressor | file | ratio in % | compression time | decompression time | compression memory in MB | decompression memory in MB"
+fi
+
+# Function to track peak virtual memory (RAM + Swap) via VmPeak in /proc
+track_mem() {
+    local PID=$1
+    local PEAK=0
+
+    while kill -0 "$PID" 2>/dev/null; do
+        if [ -f "/proc/$PID/status" ]; then
+            # VmPeak reflects the peak virtual memory size (RAM + Swap)
+            local VM_PEAK
+            VM_PEAK=$(awk '/VmPeak:/ {print $2}' "/proc/$PID/status" 2>/dev/null)
+            if [[ -n "$VM_PEAK" && "$VM_PEAK" -gt "$PEAK" ]]; then
+                PEAK=$VM_PEAK
+            fi
+        fi
+        # Sampling interval: 5 milliseconds
+        sleep 0.005 2>/dev/null || sleep 0.01
+    done
+    echo "$PEAK"
+}
 
 run_cmd() {
     local TIME_FILE="$1"
     shift
 
-    /usr/bin/time \
-        -o "$TIME_FILE" \
-        -f "%e %M" \
-        "$@"
+    local START_TIME
+    START_TIME=$(date +%s.%N)
+
+    # Run the target command in the background
+    "$@" &
+    local CMD_PID=$!
+
+    # Run memory tracker concurrently
+    local PEAK_MEM
+    PEAK_MEM=$(track_mem "$CMD_PID")
+
+    wait "$CMD_PID" 2>/dev/null
+    local END_TIME
+    END_TIME=$(date +%s.%N)
+
+    local ELAPSED
+    ELAPSED=$(awk "BEGIN {printf \"%.2f\", $END_TIME - $START_TIME}")
+
+    # Fallback to 0 if tracking failed
+    [[ "$PEAK_MEM" =~ ^[0-9]+$ ]] || PEAK_MEM=0
+
+    # Write output matching the previous pattern: "ELAPSED_TIME PEAK_MEM_KB"
+    echo "$ELAPSED $PEAK_MEM" >"$TIME_FILE"
 }
 
 run_test() {
@@ -30,6 +72,12 @@ run_test() {
     local FILE="$2"
     local BASENAME="$3"
     local ORIG_SIZE="$4"
+
+    if [ -n "$RESULTS_FILE" ] && [ -f "$RESULTS_FILE" ]; then
+        if grep -Fq "$NAME | $BASENAME |" "$RESULTS_FILE"; then
+            return 0
+        fi
+    fi
 
     shift 4
 
@@ -177,11 +225,10 @@ find "$TARGET_DIR" \
             fi
         done
 
-        for l in {0..8}; do
-            if [[ "$BASENAME" == "enwik9" && "$l" -eq 8 ]]; then
+        for l in {0..7}; do
+            if [[ "$BASENAME" == "enwik9" && "$l" -eq 7 ]]; then
                 continue
             fi
-
             run_test \
                 "lzmpo_$l" \
                 "$FILE" \

@@ -169,7 +169,7 @@ void mpo_encoder::process(auto future_limit, const auto NONE, auto i,
 
         if (len + 1 != config::prefix_lengths.size() &&
             future_limit > config::prefix_lengths[len + 1]) {
-            future_limit = config::prefix_lengths[len + 1];
+            future_limit = config::prefix_lengths[len + 1] - 1;
         }
 
         const auto &prev_buf = prev[len].data();
