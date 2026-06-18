@@ -175,6 +175,16 @@ void config::report_progress() {
 void config::apply_level(size_t file_size) {
     auto cores = static_cast<size_t>(std::thread::hardware_concurrency());
 
+    if (level[0]) {
+        block_size = file_size;
+        window_size = file_size;
+        future_limit = 256;
+        max_matches = 20;
+        divisions = cores;
+        prefix_lengths = std::vector<uint32_t>{5};
+        return;
+    };
+
     if (level[1]) {
         block_size = file_size;
         window_size = file_size;
@@ -191,7 +201,7 @@ void config::apply_level(size_t file_size) {
         future_limit = 256;
         max_matches = 20;
         divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5,6,8};
+        prefix_lengths = std::vector<uint32_t>{5, 6, 8};
         return;
     };
 
@@ -201,7 +211,7 @@ void config::apply_level(size_t file_size) {
         future_limit = 256;
         max_matches = 200;
         divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5,6,8};
+        prefix_lengths = std::vector<uint32_t>{5, 6, 8};
         return;
     };
 
@@ -211,7 +221,7 @@ void config::apply_level(size_t file_size) {
         future_limit = 256;
         max_matches = 20;
         divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5,6,8,12,16,20,24};
+        prefix_lengths = std::vector<uint32_t>{5, 6, 8, 12, 16, 20, 24};
         return;
     };
 
@@ -221,7 +231,7 @@ void config::apply_level(size_t file_size) {
         future_limit = 256;
         max_matches = 200;
         divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5,6,8,12,16,20,24};
+        prefix_lengths = std::vector<uint32_t>{5, 6, 8, 12, 16, 20, 24};
         return;
     };
 
@@ -231,7 +241,7 @@ void config::apply_level(size_t file_size) {
         future_limit = 256;
         max_matches = 2000;
         divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5,6,8,12,16,20,24};
+        prefix_lengths = std::vector<uint32_t>{5, 6, 8, 12, 16, 20, 24};
         return;
     };
 
@@ -244,11 +254,4 @@ void config::apply_level(size_t file_size) {
         prefix_lengths = std::vector<uint32_t>{5};
         return;
     };
-
-    block_size = file_size;
-    window_size = file_size;
-    future_limit = 256;
-    max_matches = 20;
-    divisions = cores;
-    prefix_lengths = std::vector<uint32_t>{5};
 }

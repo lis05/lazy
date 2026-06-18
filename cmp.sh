@@ -15,7 +15,12 @@ TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 if [ -z "$RESULTS_FILE" ] || [ ! -s "$RESULTS_FILE" ]; then
-    echo "compressor | file | ratio in % | compression time | decompression time | compression memory in MB | decompression memory in MB"
+    HEADER="compressor | file | ratio in % | compression time | decompression time | compression memory in MB | decompression memory in MB"
+    if [ -n "$RESULTS_FILE" ]; then
+        echo "$HEADER" | tee -a "$RESULTS_FILE"
+    else
+        echo "$HEADER"
+    fi
 fi
 
 # Function to track peak virtual memory (RAM + Swap) via VmPeak in /proc
@@ -33,7 +38,7 @@ track_mem() {
             fi
         fi
         # Sampling interval: 5 milliseconds
-        sleep 0.005 2>/dev/null || sleep 0.01
+        sleep 0.5 2>/dev/null || sleep 0.5
     done
     echo "$PEAK"
 }
@@ -165,7 +170,13 @@ run_test() {
     ENC_MB=$(awk "BEGIN {printf \"%.2f\", $ENC_MEM/1024}")
     DEC_MB=$(awk "BEGIN {printf \"%.2f\", $DEC_MEM/1024}")
 
-    echo "$NAME | $BASENAME | $RATIO | $ENC_TIME | $DEC_TIME | $ENC_MB | $DEC_MB"
+    RESULT_LINE="$NAME | $BASENAME | $RATIO | $ENC_TIME | $DEC_TIME | $ENC_MB | $DEC_MB"
+
+    if [ -n "$RESULTS_FILE" ]; then
+        echo "$RESULT_LINE" | tee -a "$RESULTS_FILE"
+    else
+        echo "$RESULT_LINE"
+    fi
 
     rm -f \
         "$COMP_FILE" \
@@ -226,7 +237,7 @@ find "$TARGET_DIR" \
         done
 
         for l in {0..7}; do
-            if [[ "$BASENAME" == "enwik9" && "$l" -eq 7 ]]; then
+            if [[ "$l" -eq 7 ]] && [[ "$BASENAME" == "enwik9" || "$BASENAME" =~ ^enwik8\.[1-9]$ ]]; then
                 continue
             fi
             run_test \
