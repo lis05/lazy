@@ -9,6 +9,8 @@ benchmark-results
 benchmark-params/*.csv
 __pycache__
 stats
+datasets/enwik/enwik8.*
 datasets/enwik/enwik9
 .build_mode
 .hashchains*
+project.txt
