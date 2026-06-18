@@ -169,8 +169,6 @@ int main(int argc, char **argv) {
         "Same as --fit --mm 2000 -k<supported threads> --pl 5,6,8,12,16,20,24");
     level_group->add_flag("-7", config::level[7],
                           "Same as --fit --mm 0 -k<supported threads> --pl 5");
-    level_group->add_flag("-8", config::level[8],
-                          "Same as --fit --mm 0 -k<supported threads> --pl 5 -b32");
 
     auto advanced_group = app.add_option_group("Advanced flags");
     bool set_max_windows = false;
