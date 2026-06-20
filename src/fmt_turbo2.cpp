@@ -1,10 +1,10 @@
 #include "fmt_turbo2.h"
 
+#include "bins.h"
 #include "bitstream.h"
 #include "config.h"
 #include "formats.h"
 #include "turborc.h"
-#include "bins.h"
 
 namespace formats::turbo2 {
 
@@ -72,6 +72,9 @@ void write_format_mark(std::ostream& out) {
     out << formats::TURBO2;
 }
 
+static constexpr int PRM0 = 4;
+static constexpr int PRM1 = 7;
+
 void write_block(const std::vector<token>& tokens, std::ostream& out) {
     config::print_message("Encoding tokens (may take a while)\n");
     std::vector<std::byte> control;
@@ -124,11 +127,12 @@ void write_block(const std::vector<token>& tokens, std::ostream& out) {
     std::vector<std::byte> out_dist;
     std::vector<std::byte> out_len;
 
-    ::turborc::compress<::turborc::rcmrrssenc, std::byte, 4, 7>(control,
-                                                                out_control);
-    ::turborc::compress<::turborc::rcmrrssenc, std::byte, 4, 7>(lit, out_lit);
-    ::turborc::compress<::turborc::rcmrrssenc, std::byte, 4, 7>(dist, out_dist);
-    ::turborc::compress<::turborc::rcmrrssenc, uint8_t, 4, 7>(len, out_len);
+    ::turborc::compress<::turborc::rcmrrssenc, std::byte, PRM0, PRM1>(control,
+                                                                      out_control);
+    ::turborc::compress<::turborc::rcmrrssenc, std::byte, PRM0, PRM1>(lit, out_lit);
+    ::turborc::compress<::turborc::rcmrrssenc, std::byte, PRM0, PRM1>(dist,
+                                                                      out_dist);
+    ::turborc::compress<::turborc::rcmrrssenc, uint8_t, PRM0, PRM1>(len, out_len);
 
     header.n_control = control.size();
     header.n_lit = lit.size();
@@ -172,11 +176,13 @@ std::pair<uint64_t, std::vector<token>> read_block(std::istream& in) {
     std::vector<std::byte> dist(h.n_dist);
     std::vector<uint8_t>   len(h.n_len);
 
-    ::turborc::decompress<::turborc::rcmrrssdec, std::byte, 4, 7>(out_control,
-                                                                  control);
-    ::turborc::decompress<::turborc::rcmrrssdec, std::byte, 4, 7>(out_lit, lit);
-    ::turborc::decompress<::turborc::rcmrrssdec, std::byte, 4, 7>(out_dist, dist);
-    ::turborc::decompress<::turborc::rcmrrssdec, uint8_t, 4, 7>(out_len, len);
+    ::turborc::decompress<::turborc::rcmrrssdec, std::byte, PRM0, PRM1>(out_control,
+                                                                        control);
+    ::turborc::decompress<::turborc::rcmrrssdec, std::byte, PRM0, PRM1>(out_lit,
+                                                                        lit);
+    ::turborc::decompress<::turborc::rcmrrssdec, std::byte, PRM0, PRM1>(out_dist,
+                                                                        dist);
+    ::turborc::decompress<::turborc::rcmrrssdec, uint8_t, PRM0, PRM1>(out_len, len);
 
     bit_reader<decltype(extra_dist.begin())> reader{extra_dist.begin()};
 
