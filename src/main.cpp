@@ -9,6 +9,7 @@
 
 #include "config.h"
 #include "decoder.h"
+#include "estimators.h"
 #include "formats.h"
 #include "ioreader.h"
 #include "iowriter.h"
@@ -51,13 +52,23 @@ static void encode(auto &in, auto &out, auto print_total_tokens, auto &pp) {
 
                 config::print_message(
                     std::format("Processing block {}\n", b.value().index));
-                Encoder encoder;
 
-                auto [data_buffer, bytes_loaded] = encoder.for_loading();
-                std::copy(b.value().data.begin(), b.value().data.end(), data_buffer);
-                bytes_loaded = b.value().data.size();
+                std::shared_ptr<estimators::estimator> est(new estimators::basic());
+                std::vector<token>                     tokens;
+                for (uint32_t pass = 0; pass < config::passes; pass++) {
+                    config::print_message(
+                        std::format("Pass {} / {}\n", pass + 1, config::passes));
+                    Encoder encoder;
 
-                writer.put(b.value().index, std::move(encoder.encode()));
+                    auto [data_buffer, bytes_loaded] = encoder.for_loading();
+                    std::copy(b.value().data.begin(), b.value().data.end(),
+                              data_buffer);
+                    bytes_loaded = b.value().data.size();
+
+                    tokens = encoder.encode(pass, est);
+                }
+
+                writer.put(b.value().index, tokens);
             }
         }};
     };
@@ -193,6 +204,7 @@ int main(int argc, char **argv) {
         "Bits per hash. If 0, a hash map will be used. If not "
         "0, a table of size 2^<bits> will "
         "be used. Should not exceed 32");
+    advanced_group->add_option("-a", config::passes, "How many passes to do");
 
     auto misc_group = app.add_option_group("Miscellaneous");
     bool measure_time = false;

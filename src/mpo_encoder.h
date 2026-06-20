@@ -24,14 +24,15 @@ class mpo_encoder {
     std::vector<std::byte> data;
     std::vector<token>     tokens;
 
-    std::vector<estimators::better::state> states;
+    std::vector<estimators::estimator::state> states;
+    std::shared_ptr<estimators::estimator>    estimator;
 
-    std::vector<uint32_t> hashes;
+    std::vector<uint32_t>                         hashes;
     __gnu_pbds::gp_hash_table<uint32_t, uint32_t> head_gp;
     table                                         head;
     std::vector<std::vector<uint32_t>>            prev;
 
-    std::vector<std::vector<uint64_t>> dp_cost;
+    std::vector<std::vector<double>>   dp_cost;
     std::vector<std::vector<uint32_t>> dp_from;
     std::vector<std::vector<uint32_t>> dp_pos;
 
@@ -49,5 +50,6 @@ private:
     void write_stats_tokens();
 
 public:
-    std::vector<token> encode();
+    std::vector<token> encode(uint32_t                                pass,
+                              std::shared_ptr<estimators::estimator> &est);
 };

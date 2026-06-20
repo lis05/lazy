@@ -236,10 +236,7 @@ find "$TARGET_DIR" \
             fi
         done
 
-        for l in {0..7}; do
-            if [[ "$l" -eq 7 ]] && [[ "$BASENAME" == "enwik9" || "$BASENAME" =~ ^enwik8\.[1-9]$ ]]; then
-                continue
-            fi
+        for l in {0..6}; do
             run_test \
                 "lzmpo_$l" \
                 "$FILE" \

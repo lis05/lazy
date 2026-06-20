@@ -59,10 +59,10 @@ public:
         cv.notify_one();
     }
 
-    inline void put(size_t index, std::vector<token> &&tokens) {
+    inline void put(size_t index, const std::vector<token> &tokens) {
         std::unique_lock<std::mutex> lock(mtx);
 
-        blocks[index] = std::move(tokens);
+        blocks[index] = tokens;
         if (index == next_index) {
             lock.unlock();
             cv.notify_one();
