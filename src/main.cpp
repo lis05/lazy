@@ -53,7 +53,7 @@ static void encode(auto &in, auto &out, auto print_total_tokens, auto &pp) {
                 config::print_message(
                     std::format("Processing block {}\n", b.value().index));
 
-                std::shared_ptr<estimators::estimator> est(new estimators::basic());
+                estimators::smart est;
                 std::vector<token>                     tokens;
                 for (uint32_t pass = 0; pass < config::passes; pass++) {
                     config::print_message(

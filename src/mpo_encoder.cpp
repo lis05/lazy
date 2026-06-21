@@ -193,9 +193,7 @@ void mpo_encoder::process(auto future_limit, const auto NONE, auto i,
     }
 }
 
-std::vector<token> mpo_encoder::encode(uint32_t                                pass,
-                                       std::shared_ptr<estimators::estimator> &est) {
-    this->estimator = est;
+std::vector<token> mpo_encoder::encode(uint32_t pass, estimators::smart &est) {
     constexpr auto INF = std::numeric_limits<uint64_t>::max();
     constexpr auto NONE = std::numeric_limits<uint32_t>::max();
 
@@ -329,7 +327,7 @@ std::vector<token> mpo_encoder::encode(uint32_t                                p
         sync_hashchains();
     }
 
-    write_stats_hashes();
+    write_stats_hashes(est);
 
     config::print_message(std::format("Calculating tokens + dp\n"));
     config::total_bytes = bytes_loaded + 1;
@@ -341,7 +339,7 @@ std::vector<token> mpo_encoder::encode(uint32_t                                p
     dp_cost.resize(blocks.size());
     dp_from.resize(blocks.size());
     dp_pos.resize(blocks.size());
-    states.resize(bytes_loaded + 1, estimators::basic::state{0, 0, 0});
+    states.resize(bytes_loaded + 1, estimators::state{0, 0, 0});
 
     size_t block_index = 0;
     for (auto [start, end] : blocks) {
@@ -383,13 +381,12 @@ std::vector<token> mpo_encoder::encode(uint32_t                                p
                         continue;
                     }
 
-                    double edge_cost = estimator->match_cost(
-                        i - subblock_ptr[match_len], match_len, states[i]);
+                    double edge_cost = est.match_cost(i - subblock_ptr[match_len],
+                                                      match_len, states[i]);
                     double literals_cost = 0;
                     for (size_t ii = 0; ii < match_len; ii++) {
-                        literals_cost +=
-                            estimator->literal_cost(static_cast<uint64_t>(
-                                data_ptr[subblock_ptr[match_len] + ii]));
+                        literals_cost += est.literal_cost(static_cast<uint64_t>(
+                            data_ptr[subblock_ptr[match_len] + ii]));
                     }
                     // edge
                     if (edge_cost < literals_cost && i + match_len < end) {
@@ -401,7 +398,7 @@ std::vector<token> mpo_encoder::encode(uint32_t                                p
                                 subblock_ptr[match_len];
                             const auto &src = states[i];
                             auto       &s = states[i + match_len];
-                            s = estimators::estimator::state{
+                            s = estimators::state{
                                 static_cast<uint32_t>(i - subblock_ptr[match_len]),
                                 src.dist_cache[0], src.dist_cache[1]};
                         }
@@ -412,7 +409,7 @@ std::vector<token> mpo_encoder::encode(uint32_t                                p
                 if (i + 1 <= end) {
                     double new_cost =
                         cur_dp_cost_ptr +
-                        estimator->literal_cost(static_cast<uint64_t>(data_ptr[i]));
+                        est.literal_cost(static_cast<uint64_t>(data_ptr[i]));
                     if (dp_cost_ptr[i + 1 - start] > new_cost) {
                         dp_cost_ptr[i + 1 - start] = new_cost;
                         dp_from_ptr[i + 1 - start] = i;
@@ -496,13 +493,13 @@ std::vector<token> mpo_encoder::encode(uint32_t                                p
         }
     }
 
-    write_stats_tokens();
+    write_stats_tokens(est);
 
     if (pass + 1 != config::passes) {
-        auto sec_est = std::make_shared<estimators::secondary>();
+        est.clear();
 
-        std::vector<uint8_t>         controls, lengths, literals, ctx;
-        estimators::estimator::state s{0, 0, 0};
+        std::vector<uint8_t> controls, lengths, literals, ctx;
+        estimators::state    s{0, 0, 0};
 
         for (const auto &t : tokens) {
             if (std::holds_alternative<std::byte>(t)) {
@@ -524,23 +521,21 @@ std::vector<token> mpo_encoder::encode(uint32_t                                p
                     ctx.push_back(info.ctx);
                 }
 
-                s = estimators::estimator::state{static_cast<uint32_t>(d),
-                                                 s.dist_cache[0], s.dist_cache[1]};
+                s = estimators::state{static_cast<uint32_t>(d), s.dist_cache[0],
+                                      s.dist_cache[1]};
             }
         }
 
-        sec_est->fill(sec_est->controls_table, controls);
-        sec_est->fill(sec_est->lengths_table, lengths);
-        sec_est->fill(sec_est->literals_table, literals);
-        sec_est->fill(sec_est->ctx_table, ctx);
-
-        est = sec_est;
+        est.fill(est.controls_table, controls);
+        est.fill(est.lengths_table, lengths);
+        est.fill(est.literals_table, literals);
+        est.fill(est.ctx_table, ctx);
     }
 
     return tokens;
 }
 
-void mpo_encoder::write_stats_hashes() {
+void mpo_encoder::write_stats_hashes(estimators::smart &est) {
     if (!config::stats) {
         return;
     }
@@ -652,7 +647,7 @@ void mpo_encoder::write_stats_hashes() {
     out.close();
 }
 
-void mpo_encoder::write_stats_tokens() {
+void mpo_encoder::write_stats_tokens(estimators::smart &est) {
     if (!config::stats) {
         return;
     }
@@ -676,7 +671,7 @@ void mpo_encoder::write_stats_tokens() {
         } else {
             const auto [d, l] = std::get<match>(t);
             out << i << ",match," << d << "," << l << ","
-                << estimator->match_cost(d, l, states[file_pos]) << "\n";
+                << est.match_cost(d, l, states[file_pos]) << "\n";
             file_pos += l;
         }
         i++;

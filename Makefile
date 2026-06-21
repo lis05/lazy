@@ -10,10 +10,14 @@ ifeq ($(MODE), debug)
     CXXFLAGS := -O0 -g -ftree-vectorize -march=native -std=c++23 -MMD -MP -Ithird_party/
     CFLAGS   := -O0 -g -ftree-vectorize -march=native -std=gnu11 -Ithird_party/
     LDFLAGS  := -g
-else
+else ifeq ($(MODE), size)
     CXXFLAGS := -Oz -ffunction-sections -fdata-sections -flto -fno-ident -fno-asynchronous-unwind-tables -march=native -std=c++23 -MMD -MP -Ithird_party/
     CFLAGS   := -Oz -ffunction-sections -fdata-sections -flto -fno-ident -fno-asynchronous-unwind-tables -std=gnu11 -Ithird_party/
     LDFLAGS  := -s -flto -Wl,--gc-sections
+else
+    CXXFLAGS := -O3 -ffunction-sections -fdata-sections -flto -fno-ident -fno-asynchronous-unwind-tables -march=native -std=c++23 -MMD -MP -Ithird_party/
+    CFLAGS   := -O3 -ffunction-sections -fdata-sections -flto -fno-ident -fno-asynchronous-unwind-tables -march=native -std=gnu11 -Ithird_party/
+    LDFLAGS  := -flto -Wl,--gc-sections
 endif
 
 TARGET := build/lzmpo

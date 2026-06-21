@@ -30,16 +30,15 @@ track_mem() {
 
     while kill -0 "$PID" 2>/dev/null; do
         if [ -f "/proc/$PID/status" ]; then
-            # VmPeak reflects the peak virtual memory size (RAM + Swap)
             local VM_PEAK
             VM_PEAK=$(awk '/VmPeak:/ {print $2}' "/proc/$PID/status" 2>/dev/null)
             if [[ -n "$VM_PEAK" && "$VM_PEAK" -gt "$PEAK" ]]; then
                 PEAK=$VM_PEAK
             fi
         fi
-        # Sampling interval: 5 milliseconds
         sleep 0.5 2>/dev/null || sleep 0.5
     done
+
     echo "$PEAK"
 }
 
@@ -50,25 +49,22 @@ run_cmd() {
     local START_TIME
     START_TIME=$(date +%s.%N)
 
-    # Run the target command in the background
     "$@" &
     local CMD_PID=$!
 
-    # Run memory tracker concurrently
     local PEAK_MEM
     PEAK_MEM=$(track_mem "$CMD_PID")
 
     wait "$CMD_PID" 2>/dev/null
+
     local END_TIME
     END_TIME=$(date +%s.%N)
 
     local ELAPSED
     ELAPSED=$(awk "BEGIN {printf \"%.2f\", $END_TIME - $START_TIME}")
 
-    # Fallback to 0 if tracking failed
     [[ "$PEAK_MEM" =~ ^[0-9]+$ ]] || PEAK_MEM=0
 
-    # Write output matching the previous pattern: "ELAPSED_TIME PEAK_MEM_KB"
     echo "$ELAPSED $PEAK_MEM" >"$TIME_FILE"
 }
 
@@ -85,7 +81,6 @@ run_test() {
     fi
 
     shift 4
-
     local ENC=("$@")
 
     local COMP_FILE="${TMP_DIR}/${BASENAME}.${NAME}"
@@ -94,39 +89,23 @@ run_test() {
     local ENC_TIME_FILE="${TMP_DIR}/enc.time"
     local DEC_TIME_FILE="${TMP_DIR}/dec.time"
 
-    rm -f \
-        "$COMP_FILE" \
-        "$DECOMP_FILE" \
-        "$ENC_TIME_FILE" \
-        "$DEC_TIME_FILE"
+    rm -f "$COMP_FILE" "$DECOMP_FILE" "$ENC_TIME_FILE" "$DEC_TIME_FILE"
 
     case "$NAME" in
 
         brotli_*)
-            run_cmd "$ENC_TIME_FILE" \
-                "${ENC[@]}" \
-                -c "$FILE" >"$COMP_FILE"
-
-            run_cmd "$DEC_TIME_FILE" \
-                brotli -d -c "$COMP_FILE" >"$DECOMP_FILE"
+            run_cmd "$ENC_TIME_FILE" "${ENC[@]}" -c "$FILE" >"$COMP_FILE"
+            run_cmd "$DEC_TIME_FILE" brotli -d -c "$COMP_FILE" >"$DECOMP_FILE"
             ;;
 
         xz_*)
-            run_cmd "$ENC_TIME_FILE" \
-                "${ENC[@]}" \
-                -c "$FILE" >"$COMP_FILE"
-
-            run_cmd "$DEC_TIME_FILE" \
-                xz -d -c "$COMP_FILE" >"$DECOMP_FILE"
+            run_cmd "$ENC_TIME_FILE" "${ENC[@]}" -c "$FILE" >"$COMP_FILE"
+            run_cmd "$DEC_TIME_FILE" xz -d -c "$COMP_FILE" >"$DECOMP_FILE"
             ;;
 
         zstd_*)
-            run_cmd "$ENC_TIME_FILE" \
-                "${ENC[@]}" \
-                -c "$FILE" >"$COMP_FILE"
-
-            run_cmd "$DEC_TIME_FILE" \
-                zstd -d -q -c "$COMP_FILE" >"$DECOMP_FILE"
+            run_cmd "$ENC_TIME_FILE" "${ENC[@]}" -c "$FILE" >"$COMP_FILE"
+            run_cmd "$DEC_TIME_FILE" zstd -d -q -c "$COMP_FILE" >"$DECOMP_FILE"
             ;;
 
         lzmpo_*)
@@ -136,6 +115,8 @@ run_test() {
                 -i "$FILE" \
                 -o "$COMP_FILE" \
                 -p \
+                -b32 \
+                --lhc hashchains9 \
                 >&2
 
             run_cmd "$DEC_TIME_FILE" \
@@ -178,11 +159,7 @@ run_test() {
         echo "$RESULT_LINE"
     fi
 
-    rm -f \
-        "$COMP_FILE" \
-        "$DECOMP_FILE" \
-        "$ENC_TIME_FILE" \
-        "$DEC_TIME_FILE"
+    rm -f "$COMP_FILE" "$DECOMP_FILE" "$ENC_TIME_FILE" "$DEC_TIME_FILE"
 }
 
 find "$TARGET_DIR" \
@@ -192,57 +169,38 @@ find "$TARGET_DIR" \
     ! -name "*.zstd" \
     ! -name "*.lzmpo" \
     ! -name "*.dec" \
-    | while read -r FILE; do
+| while read -r FILE; do
 
-        ORIG_SIZE=$(stat -c %s "$FILE")
+    ORIG_SIZE=$(stat -c %s "$FILE")
+    [ "$ORIG_SIZE" -eq 0 ] && continue
 
-        [ "$ORIG_SIZE" -eq 0 ] && continue
+    BASENAME=$(basename "$FILE")
 
-        BASENAME=$(basename "$FILE")
-
-        for l in {0..11}; do
-            run_test \
-                "brotli_q$l" \
-                "$FILE" \
-                "$BASENAME" \
-                "$ORIG_SIZE" \
-                brotli -q "$l"
-        done
-
-        for l in {0..9}; do
-            run_test \
-                "xz_$l" \
-                "$FILE" \
-                "$BASENAME" \
-                "$ORIG_SIZE" \
-                xz "-$l" -T16
-        done
-
-        for l in {1..22}; do
-            if [ "$l" -ge 20 ]; then
-                run_test \
-                    "zstd_$l" \
-                    "$FILE" \
-                    "$BASENAME" \
-                    "$ORIG_SIZE" \
-                    zstd --ultra "-$l" -T16 -q
-            else
-                run_test \
-                    "zstd_$l" \
-                    "$FILE" \
-                    "$BASENAME" \
-                    "$ORIG_SIZE" \
-                    zstd "-$l" -T16 -q
-            fi
-        done
-
-        for l in {0..6}; do
-            run_test \
-                "lzmpo_$l" \
-                "$FILE" \
-                "$BASENAME" \
-                "$ORIG_SIZE" \
-                "$LZMPO_BIN" "-$l"
-        done
-
+    for l in {0..11}; do
+        run_test "brotli_q$l" "$FILE" "$BASENAME" "$ORIG_SIZE" brotli -q "$l"
     done
+
+    for l in {0..9}; do
+        run_test "xz_$l" "$FILE" "$BASENAME" "$ORIG_SIZE" xz "-$l" -T16
+    done
+
+    for l in {1..22}; do
+        if [ "$l" -ge 20 ]; then
+            run_test "zstd_$l" "$FILE" "$BASENAME" "$ORIG_SIZE" zstd --ultra "-$l" -T16 -q
+        else
+            run_test "zstd_$l" "$FILE" "$BASENAME" "$ORIG_SIZE" zstd "-$l" -T16 -q
+        fi
+    done
+
+    for l in 6 5 4 3 2 1 0; do
+        for a in 4 3 2 1; do
+            run_test \
+                "lzmpo_a${a}_$l" \
+                "$FILE" \
+                "$BASENAME" \
+                "$ORIG_SIZE" \
+                "$LZMPO_BIN" "-$l" "-a$a"
+        done
+    done
+
+done

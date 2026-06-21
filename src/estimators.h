@@ -11,54 +11,27 @@
 #include "bins.h"
 
 namespace estimators {
-struct estimator {
-    struct state {
-        uint32_t dist_cache[3];
-        state(uint32_t dist0, uint32_t dist1, uint32_t dist2) {
-            dist_cache[0] = dist0;
-            dist_cache[1] = dist1;
-            dist_cache[2] = dist2;
-        }
-    };
-
-    virtual double control_cost(uint64_t control) = 0;
-    virtual double literal_cost(uint64_t literal) = 0;
-    virtual double match_cost(uint64_t dist, uint64_t len, const state &s) = 0;
-    virtual ~estimator() = default;
-};
-
-struct basic : public estimator {
-    double control_cost(uint64_t control) override {
-        return static_cast<double>(1);
-    }
-
-    double literal_cost(uint64_t literal) override {
-        return static_cast<double>(7);
-    }
-
-    double match_cost(uint64_t dist, uint64_t len, const state &s) override {
-        using T = uint64_t;
-        constexpr T full_bits = 8 * sizeof(T);
-        T           len_cost = full_bits - std::countl_zero(len);
-
-        if (s.dist_cache[0] == dist || s.dist_cache[1] == dist ||
-            s.dist_cache[2] == dist) {
-            return control_cost(1) + len_cost;
-        } else {
-            auto           info = dist_bins::get(dist);
-            constexpr auto ctx_cost =
-                full_bits -
-                std::countl_zero(static_cast<T>(dist_bins::get(1e9).ctx));
-            return control_cost(4) + ctx_cost + info.extra_bits + len_cost;
-        }
+struct state {
+    uint32_t dist_cache[3];
+    state(uint32_t dist0, uint32_t dist1, uint32_t dist2) {
+        dist_cache[0] = dist0;
+        dist_cache[1] = dist1;
+        dist_cache[2] = dist2;
     }
 };
 
-struct secondary : public estimator {
+struct smart {
     std::vector<double> controls_table;
     std::vector<double> lengths_table;
     std::vector<double> literals_table;
     std::vector<double> ctx_table;
+
+    void clear() {
+        controls_table.clear();
+        lengths_table.clear();
+        literals_table.clear();
+        ctx_table.clear();
+    }
 
     void fill(std::vector<double> &table, const auto &values) {
         if (values.empty()) {
@@ -134,19 +107,41 @@ struct secondary : public estimator {
         }
     }
 
-    double control_cost(uint64_t control) override {
+    inline constexpr double control_cost(uint64_t control) {
+        if (controls_table.empty()) {
+            return 1;
+        }
         if (control >= controls_table.size())
             return 1e99;
         return controls_table[control];
     }
 
-    double literal_cost(uint64_t literal) override {
+    inline constexpr double literal_cost(uint64_t literal) {
+        if (literals_table.empty()) {
+            return 7;
+        }
         if (literal >= literals_table.size())
             return control_cost(0) + 1e99;
         return control_cost(0) + literals_table[literal];
     }
 
-    double match_cost(uint64_t dist, uint64_t len, const state &s) override {
+    inline constexpr double match_cost(uint64_t dist, uint64_t len, const state &s) {
+        if (literals_table.empty()) {
+            using T = uint64_t;
+            constexpr T full_bits = 8 * sizeof(T);
+            T           len_cost = full_bits - std::countl_zero(len);
+
+            if (s.dist_cache[0] == dist || s.dist_cache[1] == dist ||
+                s.dist_cache[2] == dist) {
+                return control_cost(1) + len_cost;
+            } else {
+                auto           info = dist_bins::get(dist);
+                constexpr auto ctx_cost =
+                    full_bits -
+                    std::countl_zero(static_cast<T>(dist_bins::get(1e9).ctx));
+                return control_cost(4) + ctx_cost + info.extra_bits + len_cost;
+            }
+        }
         double len_cost = (len < lengths_table.size()) ? lengths_table[len] : 1e99;
 
         if (s.dist_cache[0] == dist) {

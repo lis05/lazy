@@ -24,8 +24,7 @@ class mpo_encoder {
     std::vector<std::byte> data;
     std::vector<token>     tokens;
 
-    std::vector<estimators::estimator::state> states;
-    std::shared_ptr<estimators::estimator>    estimator;
+    std::vector<estimators::state> states;
 
     std::vector<uint32_t>                         hashes;
     __gnu_pbds::gp_hash_table<uint32_t, uint32_t> head_gp;
@@ -46,10 +45,9 @@ private:
     void sync_hashchains();
     void process(auto future_limit, const auto NONE, auto i, auto *subblock_ptr);
 
-    void write_stats_hashes();
-    void write_stats_tokens();
+    void write_stats_hashes(estimators::smart &est);
+    void write_stats_tokens(estimators::smart &est);
 
 public:
-    std::vector<token> encode(uint32_t                                pass,
-                              std::shared_ptr<estimators::estimator> &est);
+    std::vector<token> encode(uint32_t pass, estimators::smart &est);
 };

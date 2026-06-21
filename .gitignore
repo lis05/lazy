@@ -13,4 +13,5 @@ datasets/enwik/enwik8.*
 datasets/enwik/enwik9
 .build_mode
 .hashchains*
+hashchains*
 project.txt
