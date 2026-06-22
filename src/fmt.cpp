@@ -8,6 +8,7 @@
 #include "config.h"
 #include "formats.h"
 #include "fse.h"
+#include "huf.h"
 #include "turborc.h"
 
 namespace formats::main {
@@ -94,9 +95,14 @@ static void compress_vect(const auto& vect, auto& res) {
         res.push_back(std::byte{1});
         res.insert(res.end(), tmp.begin(), tmp.end());
     } else if (config::use_fse) {
-        ::fse::compress<::fse::FSE_compress, T>(vect, tmp);
+        ::fse::compress<T>(vect, tmp);
         res.reserve(tmp.size() + 1);
         res.push_back(std::byte{2});
+        res.insert(res.end(), tmp.begin(), tmp.end());
+    } else if (config::use_huf) {
+        ::huf::compress<T>(vect, tmp);
+        res.reserve(tmp.size() + 1);
+        res.push_back(std::byte{3});
         res.insert(res.end(), tmp.begin(), tmp.end());
     } else {
         throw std::runtime_error("No compression algorithm selected");
@@ -119,7 +125,9 @@ static void decompress_vect(const auto& vect, auto& res) {
     } else if (flag == std::byte{1}) {
         ::turborc::decompress<::turborc::anscdf1dec, T>(src, res);
     } else if (flag == std::byte{2}) {
-        ::fse::decompress<fse::FSE_decompress, T>(src, res);
+        ::fse::decompress<T>(src, res);
+    } else if (flag == std::byte{3}) {
+        ::huf::decompress<T>(src, res);
     } else {
         throw std::runtime_error("Unknown compression flag");
     }

@@ -1,3 +1,7 @@
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
 #include <CLI11/include/CLI/CLI.hpp>
 #include <atomic>
 #include <chrono>
@@ -55,10 +59,11 @@ static void encode(auto &in, auto &out, auto print_total_tokens, auto &pp) {
 
                 estimators::smart  est;
                 std::vector<token> tokens;
+                Encoder            encoder;
+
                 for (uint32_t pass = 0; pass < config::passes; pass++) {
                     config::print_message(
                         std::format("Pass {} / {}\n", pass + 1, config::passes));
-                    Encoder encoder;
 
                     auto [data_buffer, bytes_loaded] = encoder.for_loading();
                     std::copy(b.value().data.begin(), b.value().data.end(),
@@ -66,6 +71,7 @@ static void encode(auto &in, auto &out, auto print_total_tokens, auto &pp) {
                     bytes_loaded = b.value().data.size();
 
                     tokens = encoder.encode(pass, est);
+                    encoder.reset_for_next_pass(pass);
                 }
 
                 writer.put(b.value().index, tokens);
@@ -88,28 +94,35 @@ static void encode(auto &in, auto &out, auto print_total_tokens, auto &pp) {
     }
 }
 
-static void decode(auto &in, auto &out, auto &pp) {
+static void decode(auto &in, std::string filename, auto &pp) {
     decoder decoder;
 
-    uint64_t i = 0;
-    while (true) {
-        unsigned char mark;
-        if (!(in >> mark)) {
-            break;
-        }
-        config::print_message(std::format("Processing block {}\n", i++));
-        auto format = formats::format::get_for_mark(mark);
-        auto [orig_size, tokens] = format.read_block(in);
-
-        if (tokens.empty()) {
-            break;
-        }
-
-        decoder.reset();
-        decoder.decode(orig_size, tokens);
-        auto [data, len] = decoder.get_bytes();
-        out.write(reinterpret_cast<const char *>(data), len);
+    unsigned char mark;
+    if (!(in >> mark)) {
+        throw std::runtime_error("Failed to read the input file");
+        config::finish();
+        pp.join();
+        return;
     }
+
+    auto format = formats::format::get_for_mark(mark);
+    auto [orig_size, tokens] = format.read_block(in);
+
+    int fd = open(filename.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+    if (fd == -1 || ftruncate(fd, orig_size) == -1) {
+        throw std::runtime_error("Failed to open the output file");
+        config::finish();
+        pp.join();
+        return;
+    }
+
+    std::byte *ptr = static_cast<std::byte *>(
+        mmap(nullptr, orig_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
+
+    decoder.decode(orig_size, ptr, tokens);
+
+    munmap(ptr, orig_size);
+    close(fd);
 
     config::finish();
     pp.join();
@@ -210,7 +223,9 @@ int main(int argc, char **argv) {
     advanced_group->add_flag("--turboans", config::use_turboans,
                              "Use TurboANS as backend");
     advanced_group->add_flag("--fse", config::use_fse,
-                             "Use finitestateentropy as backend");
+                             "Use finitestateentropy's fse as backend");
+    advanced_group->add_flag("--huf", config::use_huf,
+                             "Use finitestateentropy's huf as backend");
 
     auto misc_group = app.add_option_group("Miscellaneous");
     bool measure_time = false;
@@ -233,7 +248,8 @@ int main(int argc, char **argv) {
 
     CLI11_PARSE(app, argc, argv);
 
-    if (!config::use_turborc && !config::use_turboans && !config::use_fse) {
+    if (!config::use_turborc && !config::use_turboans && !config::use_fse &&
+        !config::use_huf) {
         config::use_turborc = true;
     }
 
@@ -272,7 +288,8 @@ int main(int argc, char **argv) {
         encode<mpo_encoder>(in, out, print_total_tokens, printer);
     } else if (run_decoder) {
         auto printer = std::jthread{config::report_progress};
-        decode(in, out, printer);
+        out.close();
+        decode(in, output_file, printer);
     }
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed_time = end_time - start_time;

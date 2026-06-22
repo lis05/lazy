@@ -1,37 +1,27 @@
 #include "decoder.h"
 
-decoder::decoder() = default;
+#include "cyccpy.h"
 
-void decoder::reset() {
-    data.clear();
-}
-
-std::pair<const std::byte *, size_t> decoder::get_bytes() const noexcept {
-    return {data.data(), data.size()};
-}
-
-void decoder::decode(size_t orig_size, const std::vector<token> &tokens) {
-    data.reserve(orig_size);
-
+void decoder::decode(size_t orig_size, std::byte* data,
+                     const std::vector<token>& tokens) {
     config::print_message("Restoring original file\n");
-    config::total_bytes = orig_size;
-    config::processed_bytes = 0;
+    uint32_t data_i = 0;
 
     for (auto t : tokens) {
         if (std::holds_alternative<std::byte>(t)) {
-            data.push_back(std::get<std::byte>(t));
-            config::processed_bytes++;
+            data[data_i++] = std::get<std::byte>(t);
         } else {
             auto [distance, length] = std::get<match>(t);
-            if (distance > data.size()) {
-                throw std::runtime_error(
-                    std::format("Invalid distance: {} (data has {} bytes)", distance,
-                                data.size()));
-            }
-            for (size_t i = data.size() - distance, len = 0; len < length;
-                 len++, i++) {
-                data.push_back(data[i]);
-                config::processed_bytes++;
+            if (data_i + length + 32 <= orig_size) [[likely]] {
+                cyccpy::cyccpy32(
+                    reinterpret_cast<uint8_t*>(data + data_i - distance), distance,
+                    length);
+                data_i += length;
+            } else [[unlikely]] {
+                for (size_t i = data_i - distance, len = 0; len < length;
+                     len++, i++) {
+                    data[data_i++] = data[i];
+                }
             }
         }
     }

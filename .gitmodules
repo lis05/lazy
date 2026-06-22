@@ -7,3 +7,6 @@
 [submodule "third_party/fse"]
 	path = third_party/fse
 	url = https://github.com/Cyan4973/FiniteStateEntropy.git
+[submodule "third_party/FastMemcpy"]
+	path = third_party/FastMemcpy
+	url = https://github.com/skywind3000/FastMemcpy

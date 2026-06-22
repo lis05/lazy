@@ -266,6 +266,19 @@ void mpo_encoder::sync_tokens() {
     config::print_message("Tokens saved successfully.\n");
 }
 
+void mpo_encoder::reset_for_next_pass(uint32_t pass) {
+    if (pass + 1 == config::passes) {
+        return;
+    }
+
+    using T = decltype(prev);
+    T prev_saved;
+    prev_saved.swap(prev);
+
+    *this = mpo_encoder();
+    this->prev.swap(prev_saved);
+}
+
 void mpo_encoder::process(auto future_limit, const auto NONE, auto i,
                           auto *subblock_ptr) {
     const auto &data_buf = data.data();
@@ -301,11 +314,11 @@ void mpo_encoder::process(auto future_limit, const auto NONE, auto i,
 
 std::vector<token> mpo_encoder::encode(uint32_t pass, estimators::smart &est) {
     if (!config::load_tokens.empty()) {
-        if (load_tokens()) {
-            if (pass + 1 != config::passes) {
-                return {};
-            }
+        if (pass + 1 == config::passes) {
+            load_tokens();
             return tokens;
+        } else {
+            return {};
         }
     }
 
@@ -316,7 +329,7 @@ std::vector<token> mpo_encoder::encode(uint32_t pass, estimators::smart &est) {
 
     worker_pool pool(config::divisions);
 
-    if (!load_hashchains()) {
+    if (prev.empty() && !load_hashchains()) {
         hashes.resize(bytes_loaded + 1);
         if (config::hash_bits == 0) {
             prev.resize(config::prefix_lengths.size());
@@ -544,10 +557,6 @@ std::vector<token> mpo_encoder::encode(uint32_t pass, estimators::smart &est) {
     }
 
     finished.wait();
-    {
-        using T = decltype(prev);
-        T{}.swap(prev);
-    }
 
     config::print_message(std::format("Backtracking dp\n"));
     config::total_bytes = bytes_loaded;

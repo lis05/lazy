@@ -40,6 +40,8 @@ public:
 
     std::pair<std::byte *, size_t &> for_loading();
 
+    void reset_for_next_pass(uint32_t pass);
+
 private:
     bool load_hashchains();
     void sync_hashchains();
