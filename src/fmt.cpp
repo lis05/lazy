@@ -216,7 +216,7 @@ void write_block(const std::vector<token>& tokens, std::ostream& out) {
     out.write(reinterpret_cast<const char*>(extra_dist.data()), extra_dist.size());
 }
 
-std::pair<uint64_t, std::vector<token>> read_block(std::istream& in) {
+std::pair<uint64_t, streams> read_block(std::istream& in) {
     config::print_message("Decoding tokens (may take a while)\n");
     header h;
     if (!(in >> h)) {
@@ -250,6 +250,10 @@ std::pair<uint64_t, std::vector<token>> read_block(std::istream& in) {
     std::vector<token> tokens;
     tokens.reserve(h.n_control);
 
+    streams res;
+    res.distances.resize(h.n_len);
+    size_t dist_i = 0;
+
     size_t lit_idx = 0;
     size_t dist_idx = 0;
     size_t len_idx = 0;
@@ -257,9 +261,7 @@ std::pair<uint64_t, std::vector<token>> read_block(std::istream& in) {
     uint32_t dist_cache[3] = {0, 0, 0};
 
     for (size_t i = 0; i < h.n_control; ++i) {
-        if (control[i] == std::byte{0}) {
-            tokens.push_back(lit[lit_idx++]);
-        } else {
+        if (control[i] != std::byte{0}) {
             uint32_t d;
             if (control[i] == std::byte{1}) {
                 d = dist_cache[0];
@@ -270,7 +272,7 @@ std::pair<uint64_t, std::vector<token>> read_block(std::istream& in) {
             } else {
                 uint32_t d_ctx = static_cast<uint32_t>(dist[dist_idx++]);
                 auto     dbins = dist_bins::get_from_ctx(d_ctx);
-                uint32_t d_val = reader.read<uint32_t>(dbins.extra_bits);
+                uint32_t d_val = reader.read(dbins.extra_bits);
                 d = dbins.base + d_val;
             }
 
@@ -278,11 +280,15 @@ std::pair<uint64_t, std::vector<token>> read_block(std::istream& in) {
             dist_cache[1] = dist_cache[0];
             dist_cache[0] = d;
 
-            tokens.push_back(match{
-                .distance = d, .length = static_cast<uint32_t>(len[len_idx++]) + 1});
+            res.distances[dist_i++] = d;
         }
     }
 
-    return {h.orig_bytes, tokens};
+    res.controls.swap(control);
+    res.literals.swap(lit);
+    res.lengths.swap(len);
+    for (auto& l : res.lengths) l++;
+
+    return {h.orig_bytes, res};
 }
 }  // namespace formats::main

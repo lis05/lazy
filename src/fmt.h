@@ -22,8 +22,15 @@ struct header {
     friend std::ostream& operator<<(std::ostream& out, const header& h);
 };
 
+struct streams {
+    std::vector<std::byte> controls;
+    std::vector<std::byte> literals;
+    std::vector<uint32_t> distances;
+    std::vector<uint8_t> lengths;
+};
+
 void verify_config();
 void write_format_mark(std::ostream& out);
 void write_block(const std::vector<token>& tokens, std::ostream& out);
-std::pair<uint64_t, std::vector<token>> read_block(std::istream& in);
+std::pair<uint64_t, streams> read_block(std::istream& in);
 }  // namespace formats::main

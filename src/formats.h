@@ -3,8 +3,8 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
-#include <vector>
 #include <utility>
+#include <vector>
 
 #include "fmt.h"
 #include "token.h"
@@ -17,7 +17,7 @@ enum marks : unsigned char {
 
 using write_format_mark_fn = void (*)(std::ostream&);
 using write_block_fn = void (*)(const std::vector<token>& tokens, std::ostream&);
-using read_block_fn = std::pair<uint64_t, std::vector<token>> (*)(std::istream&);
+using read_block_fn = std::pair<uint64_t, main::streams> (*)(std::istream&);
 using verify_config_fn = void (*)();
 
 struct format {

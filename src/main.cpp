@@ -106,7 +106,7 @@ static void decode(auto &in, std::string filename, auto &pp) {
     }
 
     auto format = formats::format::get_for_mark(mark);
-    auto [orig_size, tokens] = format.read_block(in);
+    auto [orig_size, streams] = format.read_block(in);
 
     int fd = open(filename.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
     if (fd == -1 || ftruncate(fd, orig_size) == -1) {
@@ -119,7 +119,7 @@ static void decode(auto &in, std::string filename, auto &pp) {
     std::byte *ptr = static_cast<std::byte *>(
         mmap(nullptr, orig_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
 
-    decoder.decode(orig_size, ptr, tokens);
+    decoder.decode(orig_size, ptr, streams);
 
     munmap(ptr, orig_size);
     close(fd);
