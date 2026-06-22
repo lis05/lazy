@@ -24,8 +24,12 @@ bool                  config::finished = false;
 std::atomic_uint64_t  config::processed_bytes;
 uint64_t              config::total_bytes;
 std::string           config::load_hashchains = "";
+std::string           config::load_tokens = "";
 uint32_t              config::passes = 1;
-std::string           config::format = "turbo2";
+std::string           config::format = "main";
+bool                  config::use_turborc = false;
+bool                  config::use_turboans = false;
+bool                  config::use_fse = false;
 bool                  config::level[15] = {};
 
 bool config::stats = false;

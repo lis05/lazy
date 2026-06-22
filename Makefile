@@ -21,11 +21,16 @@ else
 endif
 
 TARGET := build/lzmpo
+
 SOURCES := $(wildcard src/*.cpp)
+FSE_SOURCES=$(wildcard third_party/fse/lib/*.c)
+
 OBJECTS := $(SOURCES:src/%.cpp=obj/%.o)
-TURBO_SOURCES := $(filter-out third_party/turborc/turborc.o, $(wildcard third_party/turborc/*.o))
-TURBO_SOURCES += $(wildcard third_party/turborc/libsais/src/*.o)
-ALL_OBJECTS := $(OBJECTS) $(TURBO_SOURCES)
+TURBO_OBJECTS := $(filter-out third_party/turborc/turborc.o, $(wildcard third_party/turborc/*.o))
+TURBO_OBJECTS += $(wildcard third_party/turborc/libsais/src/*.o)
+FSE_OBJECTS=$(FSE_SOURCES:third_party/fse/lib/%.c=obj/fse_%.o)
+
+ALL_OBJECTS := $(OBJECTS) $(TURBO_OBJECTS) $(FSE_OBJECTS)
 
 all: $(TARGET)
 
@@ -36,6 +41,9 @@ obj/%.o: src/%.cpp | obj
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 obj/turbo_%.o: third_party/turborc/%.c | obj
+	$(CC) $(CFLAGS) -c $< -o $@
+
+obj/fse_%.o: third_party/fse/lib/%.c | obj
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build:

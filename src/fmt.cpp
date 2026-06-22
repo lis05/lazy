@@ -1,12 +1,16 @@
-#include "fmt_turbo2.h"
+#include "fmt.h"
+
+#include <stdexcept>
+#include <type_traits>
 
 #include "bins.h"
 #include "bitstream.h"
 #include "config.h"
 #include "formats.h"
+#include "fse.h"
 #include "turborc.h"
 
-namespace formats::turbo2 {
+namespace formats::main {
 
 std::istream& operator>>(std::istream& in, header& h) {
     in.read(reinterpret_cast<char*>(&h.orig_bytes), sizeof(h.orig_bytes));
@@ -69,11 +73,57 @@ void verify_config() {
 }
 
 void write_format_mark(std::ostream& out) {
-    out << formats::TURBO2;
+    out << formats::MAIN;
 }
 
 static constexpr int PRM0 = 4;
 static constexpr int PRM1 = 7;
+
+static void compress_vect(const auto& vect, auto& res) {
+    using T = typename std::decay_t<decltype(vect)>::value_type;
+    std::vector<std::byte> tmp;
+
+    if (config::use_turborc) {
+        ::turborc::compress<::turborc::rcmrrssenc, T, PRM0, PRM1>(vect, tmp);
+        res.reserve(tmp.size() + 1);
+        res.push_back(std::byte{0});
+        res.insert(res.end(), tmp.begin(), tmp.end());
+    } else if (config::use_turboans) {
+        ::turborc::compress<::turborc::anscdf1enc, T>(vect, tmp);
+        res.reserve(tmp.size() + 1);
+        res.push_back(std::byte{1});
+        res.insert(res.end(), tmp.begin(), tmp.end());
+    } else if (config::use_fse) {
+        ::fse::compress<::fse::FSE_compress, T>(vect, tmp);
+        res.reserve(tmp.size() + 1);
+        res.push_back(std::byte{2});
+        res.insert(res.end(), tmp.begin(), tmp.end());
+    } else {
+        throw std::runtime_error("No compression algorithm selected");
+    }
+}
+
+static void decompress_vect(const auto& vect, auto& res) {
+    using T = typename std::decay_t<decltype(res)>::value_type;
+
+    if (vect.empty()) {
+        res.clear();
+        return;
+    }
+
+    std::byte              flag = vect[0];
+    std::vector<std::byte> src(vect.begin() + 1, vect.end());
+
+    if (flag == std::byte{0}) {
+        ::turborc::decompress<::turborc::rcmrrssdec, T, PRM0, PRM1>(src, res);
+    } else if (flag == std::byte{1}) {
+        ::turborc::decompress<::turborc::anscdf1dec, T>(src, res);
+    } else if (flag == std::byte{2}) {
+        ::fse::decompress<fse::FSE_decompress, T>(src, res);
+    } else {
+        throw std::runtime_error("Unknown compression flag");
+    }
+}
 
 void write_block(const std::vector<token>& tokens, std::ostream& out) {
     config::print_message("Encoding tokens (may take a while)\n");
@@ -127,12 +177,10 @@ void write_block(const std::vector<token>& tokens, std::ostream& out) {
     std::vector<std::byte> out_dist;
     std::vector<std::byte> out_len;
 
-    ::turborc::compress<::turborc::rcmrrssenc, std::byte, PRM0, PRM1>(control,
-                                                                      out_control);
-    ::turborc::compress<::turborc::rcmrrssenc, std::byte, PRM0, PRM1>(lit, out_lit);
-    ::turborc::compress<::turborc::rcmrrssenc, std::byte, PRM0, PRM1>(dist,
-                                                                      out_dist);
-    ::turborc::compress<::turborc::rcmrrssenc, uint8_t, PRM0, PRM1>(len, out_len);
+    compress_vect(control, out_control);
+    compress_vect(lit, out_lit);
+    compress_vect(dist, out_dist);
+    compress_vect(len, out_len);
 
     header.n_control = control.size();
     header.n_lit = lit.size();
@@ -176,13 +224,10 @@ std::pair<uint64_t, std::vector<token>> read_block(std::istream& in) {
     std::vector<std::byte> dist(h.n_dist);
     std::vector<uint8_t>   len(h.n_len);
 
-    ::turborc::decompress<::turborc::rcmrrssdec, std::byte, PRM0, PRM1>(out_control,
-                                                                        control);
-    ::turborc::decompress<::turborc::rcmrrssdec, std::byte, PRM0, PRM1>(out_lit,
-                                                                        lit);
-    ::turborc::decompress<::turborc::rcmrrssdec, std::byte, PRM0, PRM1>(out_dist,
-                                                                        dist);
-    ::turborc::decompress<::turborc::rcmrrssdec, uint8_t, PRM0, PRM1>(out_len, len);
+    decompress_vect(out_control, control);
+    decompress_vect(out_lit, lit);
+    decompress_vect(out_dist, dist);
+    decompress_vect(out_len, len);
 
     bit_reader<decltype(extra_dist.begin())> reader{extra_dist.begin()};
 
@@ -224,4 +269,4 @@ std::pair<uint64_t, std::vector<token>> read_block(std::istream& in) {
 
     return {h.orig_bytes, tokens};
 }
-}  // namespace formats::turbo2
+}  // namespace formats::main

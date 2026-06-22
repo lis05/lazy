@@ -43,6 +43,8 @@ public:
 private:
     bool load_hashchains();
     void sync_hashchains();
+    bool load_tokens();
+    void sync_tokens();
     void process(auto future_limit, const auto NONE, auto i, auto *subblock_ptr);
 
     void write_stats_hashes(estimators::smart &est);

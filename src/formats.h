@@ -6,13 +6,13 @@
 #include <vector>
 #include <utility>
 
-#include "fmt_turbo2.h"
+#include "fmt.h"
 #include "token.h"
 
 namespace formats {
 
 enum marks : unsigned char {
-    TURBO2,
+    MAIN,
 };
 
 using write_format_mark_fn = void (*)(std::ostream&);
@@ -26,7 +26,7 @@ struct format {
     read_block_fn        read_block;
     verify_config_fn     verify_config;
 
-    static format get_turbo2();
+    static format get_main();
 
     static format get_for_mark(uint8_t mark);
     static format get_for_option(const std::string& option);

@@ -20,8 +20,12 @@ public:
     static std::vector<uint32_t> prefix_lengths;
     static size_t                hash_bits;
     static std::string           load_hashchains;
+    static std::string           load_tokens;
     static uint32_t              passes;
     static std::string           format;
+    static bool                  use_turborc;
+    static bool                  use_turboans;
+    static bool                  use_fse;
 
     static bool stats;
 

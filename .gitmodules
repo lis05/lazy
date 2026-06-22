@@ -4,3 +4,6 @@
 [submodule "third_party/CLI11"]
 	path = third_party/CLI11
 	url = https://github.com/CLIUtils/CLI11
+[submodule "third_party/fse"]
+	path = third_party/fse
+	url = https://github.com/Cyan4973/FiniteStateEntropy.git

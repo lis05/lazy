@@ -65,6 +65,57 @@ struct saved_hashchains {
     }
 };
 
+struct saved_tokens {
+    uint32_t           data_checksum;
+    std::vector<token> tokens;
+
+    friend auto &operator<<(auto &out, const saved_tokens &t) {
+        out.write(reinterpret_cast<const char *>(&t.data_checksum),
+                  sizeof(t.data_checksum));
+        uint64_t t_size = static_cast<uint64_t>(t.tokens.size());
+        out.write(reinterpret_cast<const char *>(&t_size), sizeof(t_size));
+        for (const auto &tok : t.tokens) {
+            if (std::holds_alternative<std::byte>(tok)) {
+                uint8_t type = 0;
+                out.write(reinterpret_cast<const char *>(&type), 1);
+                auto b = std::get<std::byte>(tok);
+                out.write(reinterpret_cast<const char *>(&b), 1);
+            } else {
+                uint8_t type = 1;
+                out.write(reinterpret_cast<const char *>(&type), 1);
+                auto m = std::get<match>(tok);
+                out.write(reinterpret_cast<const char *>(&m.distance),
+                          sizeof(m.distance));
+                out.write(reinterpret_cast<const char *>(&m.length),
+                          sizeof(m.length));
+            }
+        }
+        return out;
+    }
+
+    friend auto &operator>>(auto &in, saved_tokens &t) {
+        in.read(reinterpret_cast<char *>(&t.data_checksum), sizeof(t.data_checksum));
+        uint64_t t_size = 0;
+        in.read(reinterpret_cast<char *>(&t_size), sizeof(t_size));
+        t.tokens.resize(t_size);
+        for (uint64_t i = 0; i < t_size; i++) {
+            uint8_t type = 0;
+            in.read(reinterpret_cast<char *>(&type), 1);
+            if (type == 0) {
+                std::byte b;
+                in.read(reinterpret_cast<char *>(&b), 1);
+                t.tokens[i] = b;
+            } else {
+                match m;
+                in.read(reinterpret_cast<char *>(&m.distance), sizeof(m.distance));
+                in.read(reinterpret_cast<char *>(&m.length), sizeof(m.length));
+                t.tokens[i] = m;
+            }
+        }
+        return in;
+    }
+};
+
 bool mpo_encoder::load_hashchains() {
     if (config::load_hashchains.empty()) {
         return false;
@@ -160,6 +211,61 @@ void mpo_encoder::sync_hashchains() {
     config::print_message("Hashchains saved successfully.\n");
 }
 
+bool mpo_encoder::load_tokens() {
+    if (config::load_tokens.empty()) {
+        return false;
+    }
+
+    config::print_message(
+        std::format("Loading tokens from {}...\n", config::load_tokens));
+    std::ifstream in(config::load_tokens, std::ios::binary);
+    if (!in) {
+        config::print_message("Tokens file not found or cannot be opened.\n");
+        return false;
+    }
+
+    saved_tokens t;
+    in >> t;
+
+    if (in.fail() && !in.eof()) {
+        throw std::runtime_error("load_tokens: File read error");
+    }
+
+    uint32_t current_checksum =
+        static_cast<uint32_t>(hashes::hashn(data.data(), bytes_loaded));
+    if (t.data_checksum != current_checksum) {
+        config::print_message("Tokens checksum mismatch. Recalculating.\n");
+        return false;
+    }
+
+    this->tokens = std::move(t.tokens);
+    config::print_message("Tokens loaded successfully.\n");
+    return true;
+}
+
+void mpo_encoder::sync_tokens() {
+    if (config::load_tokens.empty()) {
+        return;
+    }
+
+    uint32_t current_checksum =
+        static_cast<uint32_t>(hashes::hashn(data.data(), bytes_loaded));
+
+    config::print_message(std::format("Saving tokens to {}\n", config::load_tokens));
+    std::ofstream out(config::load_tokens, std::ios::binary);
+    if (!out) {
+        throw std::runtime_error("sync_tokens: Failed to open file for writing");
+    }
+
+    saved_tokens t{current_checksum, this->tokens};
+    out << t;
+
+    if (!out) {
+        throw std::runtime_error("sync_tokens: Failed to write data");
+    }
+    config::print_message("Tokens saved successfully.\n");
+}
+
 void mpo_encoder::process(auto future_limit, const auto NONE, auto i,
                           auto *subblock_ptr) {
     const auto &data_buf = data.data();
@@ -194,6 +300,15 @@ void mpo_encoder::process(auto future_limit, const auto NONE, auto i,
 }
 
 std::vector<token> mpo_encoder::encode(uint32_t pass, estimators::smart &est) {
+    if (!config::load_tokens.empty()) {
+        if (load_tokens()) {
+            if (pass + 1 != config::passes) {
+                return {};
+            }
+            return tokens;
+        }
+    }
+
     constexpr auto INF = std::numeric_limits<uint64_t>::max();
     constexpr auto NONE = std::numeric_limits<uint32_t>::max();
 
@@ -491,6 +606,10 @@ std::vector<token> mpo_encoder::encode(uint32_t pass, estimators::smart &est) {
         for (auto &ee : e) {
             tokens.push_back(ee);
         }
+    }
+
+    if (pass + 1 == config::passes) {
+        sync_tokens();
     }
 
     write_stats_tokens(est);

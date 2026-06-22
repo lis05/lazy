@@ -53,8 +53,8 @@ static void encode(auto &in, auto &out, auto print_total_tokens, auto &pp) {
                 config::print_message(
                     std::format("Processing block {}\n", b.value().index));
 
-                estimators::smart est;
-                std::vector<token>                     tokens;
+                estimators::smart  est;
+                std::vector<token> tokens;
                 for (uint32_t pass = 0; pass < config::passes; pass++) {
                     config::print_message(
                         std::format("Pass {} / {}\n", pass + 1, config::passes));
@@ -205,6 +205,12 @@ int main(int argc, char **argv) {
         "0, a table of size 2^<bits> will "
         "be used. Should not exceed 32");
     advanced_group->add_option("-a", config::passes, "How many passes to do");
+    advanced_group->add_flag("--turborc", config::use_turborc,
+                             "Use TurboRC as backend");
+    advanced_group->add_flag("--turboans", config::use_turboans,
+                             "Use TurboANS as backend");
+    advanced_group->add_flag("--fse", config::use_fse,
+                             "Use finitestateentropy as backend");
 
     auto misc_group = app.add_option_group("Miscellaneous");
     bool measure_time = false;
@@ -221,8 +227,15 @@ int main(int argc, char **argv) {
     misc_group->add_option(
         "--lhc", config::load_hashchains,
         "Load & sync hashchains to file. Can speed up on subsequent runs");
+    misc_group->add_option(
+        "--lt", config::load_tokens,
+        "Load & sync tokens to file. Completly omits running the frontend");
 
     CLI11_PARSE(app, argc, argv);
+
+    if (!config::use_turborc && !config::use_turboans && !config::use_fse) {
+        config::use_turborc = true;
+    }
 
     std::ifstream in(input_file, std::ios::binary);
     if (!in.is_open()) {

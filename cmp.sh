@@ -193,7 +193,7 @@ find "$TARGET_DIR" \
     done
 
     for l in 6 5 4 3 2 1 0; do
-        for a in 4 3 2 1; do
+        for a in 5 4 3 2 1; do
             run_test \
                 "lzmpo_a${a}_$l" \
                 "$FILE" \
