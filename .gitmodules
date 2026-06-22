@@ -10,3 +10,6 @@
 [submodule "third_party/FastMemcpy"]
 	path = third_party/FastMemcpy
 	url = https://github.com/skywind3000/FastMemcpy
+[submodule "third_party/ryg_rans"]
+	path = third_party/ryg_rans
+	url = https://github.com/rygorous/ryg_rans

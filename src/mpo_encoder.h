@@ -35,6 +35,8 @@ class mpo_encoder {
     std::vector<std::vector<uint32_t>> dp_from;
     std::vector<std::vector<uint32_t>> dp_pos;
 
+    bool are_tokens_available;
+
 public:
     mpo_encoder();
 

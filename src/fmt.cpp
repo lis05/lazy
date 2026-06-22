@@ -9,6 +9,7 @@
 #include "formats.h"
 #include "fse.h"
 #include "huf.h"
+#include "rygrans.h"
 #include "turborc.h"
 
 namespace formats::main {
@@ -104,6 +105,11 @@ static void compress_vect(const auto& vect, auto& res) {
         res.reserve(tmp.size() + 1);
         res.push_back(std::byte{3});
         res.insert(res.end(), tmp.begin(), tmp.end());
+    } else if (config::use_rygrans) {
+        ::rygrans::compress<T>(vect, tmp);
+        res.reserve(tmp.size() + 1);
+        res.push_back(std::byte{4});
+        res.insert(res.end(), tmp.begin(), tmp.end());
     } else {
         throw std::runtime_error("No compression algorithm selected");
     }
@@ -128,6 +134,8 @@ static void decompress_vect(const auto& vect, auto& res) {
         ::fse::decompress<T>(src, res);
     } else if (flag == std::byte{3}) {
         ::huf::decompress<T>(src, res);
+    } else if (flag == std::byte{4}) {
+        ::rygrans::decompress<T>(src, res);
     } else {
         throw std::runtime_error("Unknown compression flag");
     }

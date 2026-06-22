@@ -11,7 +11,11 @@
 #include "split.h"
 #include "worker_pool.h"
 
-mpo_encoder::mpo_encoder() : bytes_loaded(0), data(config::block_size), head(1) {
+mpo_encoder::mpo_encoder()
+    : bytes_loaded(0),
+      data(config::block_size),
+      head(1),
+      are_tokens_available(false) {
 }
 
 std::pair<std::byte *, size_t &> mpo_encoder::for_loading() {
@@ -275,8 +279,11 @@ void mpo_encoder::reset_for_next_pass(uint32_t pass) {
     T prev_saved;
     prev_saved.swap(prev);
 
+    bool are_tokens_available_saved = are_tokens_available;
+
     *this = mpo_encoder();
     this->prev.swap(prev_saved);
+    this->are_tokens_available = are_tokens_available_saved;
 }
 
 void mpo_encoder::process(auto future_limit, const auto NONE, auto i,
@@ -314,10 +321,16 @@ void mpo_encoder::process(auto future_limit, const auto NONE, auto i,
 
 std::vector<token> mpo_encoder::encode(uint32_t pass, estimators::smart &est) {
     if (!config::load_tokens.empty()) {
-        if (pass + 1 == config::passes) {
-            load_tokens();
-            return tokens;
-        } else {
+        if (pass == 0) {
+            if (load_tokens()) {
+                are_tokens_available = true;
+                return tokens;
+            }
+        } else if (pass + 1 == config::passes) {
+            if (load_tokens()) {
+                return tokens;
+            }
+        } else if (are_tokens_available) {
             return {};
         }
     }

@@ -226,6 +226,8 @@ int main(int argc, char **argv) {
                              "Use finitestateentropy's fse as backend");
     advanced_group->add_flag("--huf", config::use_huf,
                              "Use finitestateentropy's huf as backend");
+    advanced_group->add_flag("--rygrans", config::use_rygrans,
+                             "Use ryg_rans as backend");
 
     auto misc_group = app.add_option_group("Miscellaneous");
     bool measure_time = false;
@@ -249,7 +251,7 @@ int main(int argc, char **argv) {
     CLI11_PARSE(app, argc, argv);
 
     if (!config::use_turborc && !config::use_turboans && !config::use_fse &&
-        !config::use_huf) {
+        !config::use_huf && !config::use_rygrans) {
         config::use_turborc = true;
     }
 

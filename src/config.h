@@ -27,6 +27,7 @@ public:
     static bool                  use_turboans;
     static bool                  use_fse;
     static bool                  use_huf;
+    static bool                  use_rygrans;
 
     static bool stats;
 
