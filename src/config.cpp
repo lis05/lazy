@@ -1,5 +1,4 @@
 #include "config.h"
-
 #include <unistd.h>
 
 #include <chrono>
@@ -89,14 +88,30 @@ static std::mutex mtx;
 void              config::print_message(const std::string &message) {
     std::lock_guard<std::mutex> lock(mtx);
     static auto                 start_time = std::chrono::system_clock::now();
+    static auto                 last_message_time = start_time;
     auto                        now = std::chrono::system_clock::now();
 
     auto elapsed =
         std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
-    if (!message.empty() && message[0] != '\r') {
-        std::cout << "\r\33[2K" << "[" << elapsed << "s] " << message << std::flush;
+    auto active_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           now - last_message_time)
+                           .count();
+
+    last_message_time = now;
+
+    std::string suffix = std::format(" (^ {}ms)", active_time);
+    std::string out_msg = message;
+
+    if (!out_msg.empty() && out_msg.back() == '\n') {
+        out_msg.insert(out_msg.size() - 1, suffix);
     } else {
-        std::cout << message << std::flush;
+        out_msg += suffix;
+    }
+
+    if (!message.empty() && message[0] != '\r') {
+        std::cout << "\r\33[2K" << "[" << elapsed << "s] " << out_msg << std::flush;
+    } else {
+        std::cout << out_msg << std::flush;
     }
 }
 
@@ -264,3 +279,4 @@ void config::apply_level(size_t file_size) {
         return;
     };
 }
+

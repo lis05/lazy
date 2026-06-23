@@ -25,8 +25,8 @@ void decoder::decode(size_t orig_size, std::byte* data,
         default:
             distance = distances_ptr[dist_i];
             length = lengths_ptr[dist_i++];
-            cyccpy::cyccpy32(reinterpret_cast<uint8_t*>(data + data_i - distance),
-                             distance, length);
+            cyccpy::cyccpy(reinterpret_cast<uint8_t*>(data + data_i - distance),
+                           distance, length);
             data_i += length;
         }
     }
