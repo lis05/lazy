@@ -25,17 +25,9 @@ void decoder::decode(size_t orig_size, std::byte* data,
         default:
             distance = distances_ptr[dist_i];
             length = lengths_ptr[dist_i++];
-            if (data_i + length + 32 <= orig_size) [[likely]] {
-                cyccpy::cyccpy32(
-                    reinterpret_cast<uint8_t*>(data + data_i - distance), distance,
-                    length);
-                data_i += length;
-            } else [[unlikely]] {
-                for (size_t i = data_i - distance, len = 0; len < length;
-                     len++, i++) {
-                    data[data_i++] = data[i];
-                }
-            }
+            cyccpy::cyccpy32(reinterpret_cast<uint8_t*>(data + data_i - distance),
+                             distance, length);
+            data_i += length;
         }
     }
 }

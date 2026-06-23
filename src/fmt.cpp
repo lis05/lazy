@@ -9,7 +9,7 @@
 #include "formats.h"
 #include "fse.h"
 #include "huf.h"
-#include "rygrans.h"
+#include "rans_static.h"
 #include "turborc.h"
 
 namespace formats::main {
@@ -105,10 +105,19 @@ static void compress_vect(const auto& vect, auto& res) {
         res.reserve(tmp.size() + 1);
         res.push_back(std::byte{3});
         res.insert(res.end(), tmp.begin(), tmp.end());
-    } else if (config::use_rygrans) {
-        ::rygrans::compress<T>(vect, tmp);
+    } else if (config::use_memcpy) {
+        res.resize(vect.size() * sizeof(vect[0]) + 1);
+        res[0] = std::byte{4};
+        std::memcpy(res.data() + 1, vect.data(), vect.size() * sizeof(vect[0]));
+    } else if (config::use_rans_static0) {
+        ::rans_static::compress<T>(vect, tmp, 0);
         res.reserve(tmp.size() + 1);
-        res.push_back(std::byte{4});
+        res.push_back(std::byte{5});
+        res.insert(res.end(), tmp.begin(), tmp.end());
+    } else if (config::use_rans_static1) {
+        ::rans_static::compress<T>(vect, tmp, 1);
+        res.reserve(tmp.size() + 1);
+        res.push_back(std::byte{6});
         res.insert(res.end(), tmp.begin(), tmp.end());
     } else {
         throw std::runtime_error("No compression algorithm selected");
@@ -135,7 +144,11 @@ static void decompress_vect(const auto& vect, auto& res) {
     } else if (flag == std::byte{3}) {
         ::huf::decompress<T>(src, res);
     } else if (flag == std::byte{4}) {
-        ::rygrans::decompress<T>(src, res);
+        std::memcpy(res.data(), src.data(), src.size());
+    } else if (flag == std::byte{5}) {
+        ::rans_static::decompress<T>(src, res, 0);
+    } else if (flag == std::byte{6}) {
+        ::rans_static::decompress<T>(src, res, 1);
     } else {
         throw std::runtime_error("Unknown compression flag");
     }

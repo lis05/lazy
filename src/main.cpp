@@ -100,20 +100,14 @@ static void decode(auto &in, std::string filename, auto &pp) {
     unsigned char mark;
     if (!(in >> mark)) {
         throw std::runtime_error("Failed to read the input file");
-        config::finish();
-        pp.join();
-        return;
     }
 
     auto format = formats::format::get_for_mark(mark);
     auto [orig_size, streams] = format.read_block(in);
 
     int fd = open(filename.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-    if (fd == -1 || ftruncate(fd, orig_size) == -1) {
+    if (fd == -1 || ftruncate(fd, orig_size + 128) == -1) {
         throw std::runtime_error("Failed to open the output file");
-        config::finish();
-        pp.join();
-        return;
     }
 
     std::byte *ptr = static_cast<std::byte *>(
@@ -122,6 +116,10 @@ static void decode(auto &in, std::string filename, auto &pp) {
     decoder.decode(orig_size, ptr, streams);
 
     munmap(ptr, orig_size);
+
+    if (ftruncate(fd, orig_size) == -1) {
+        throw std::runtime_error("Failed to shrink the output file");
+    }
     close(fd);
 
     config::finish();
@@ -226,8 +224,12 @@ int main(int argc, char **argv) {
                              "Use finitestateentropy's fse as backend");
     advanced_group->add_flag("--huf", config::use_huf,
                              "Use finitestateentropy's huf as backend");
-    advanced_group->add_flag("--rygrans", config::use_rygrans,
-                             "Use ryg_rans as backend");
+    advanced_group->add_flag("--memcpy", config::use_memcpy,
+                             "Use memcpy as backend");
+    advanced_group->add_flag("--rans_static0", config::use_rans_static0,
+                             "Use rans_static's r32x16b_avx2 order0 as backend");
+    advanced_group->add_flag("--rans_static1", config::use_rans_static1,
+                             "Use rans_static's r32x16b_avx2 order1 as backend");
 
     auto misc_group = app.add_option_group("Miscellaneous");
     bool measure_time = false;
@@ -251,7 +253,8 @@ int main(int argc, char **argv) {
     CLI11_PARSE(app, argc, argv);
 
     if (!config::use_turborc && !config::use_turboans && !config::use_fse &&
-        !config::use_huf && !config::use_rygrans) {
+        !config::use_huf && !config::use_memcpy && !config::use_rans_static0 &&
+        !config::use_rans_static1) {
         config::use_turborc = true;
     }
 

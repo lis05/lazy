@@ -31,7 +31,9 @@ bool                  config::use_turborc = false;
 bool                  config::use_turboans = false;
 bool                  config::use_fse = false;
 bool                  config::use_huf = false;
-bool                  config::use_rygrans = false;
+bool                  config::use_memcpy = false;
+bool                  config::use_rans_static0 = false;
+bool                  config::use_rans_static1 = false;
 bool                  config::level[15] = {};
 
 bool config::stats = false;
