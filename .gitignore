@@ -14,5 +14,5 @@ datasets/enwik/enwik9
 .build_mode
 .hashchains*
 .tokens*
-
+.zstd*
 project.txt

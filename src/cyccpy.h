@@ -64,7 +64,7 @@ static inline void cyccpy16(uint8_t* src, uint32_t dis, uint32_t n) {
 }
 
 static inline void cyccpy32(uint8_t* src, uint32_t dis, uint32_t n) {
-    if (dis >= 32) [[unlikely]] {
+    if (dis >= 32) [[likely]] {
         uint32_t i = 32;
         __m256i  reg = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src));
         _mm256_storeu_si256(reinterpret_cast<__m256i*>(src + dis), reg);
