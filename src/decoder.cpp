@@ -30,4 +30,8 @@ void decoder::decode(size_t orig_size, std::byte* data,
             data_i += length;
         }
     }
+
+    using namespace cyccpy;
+    std::cout << cnt64 << " " << cnt32 << " " << cnt16 << " " << cnt8 << " " << cnt4
+              << " " << cnt1 << "\n";
 }

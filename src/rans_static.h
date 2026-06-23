@@ -2075,7 +2075,7 @@ int main(int argc, char **argv) {
 #include <cstring>
 #include <vector>
 
-#define COMPRESSION_BLOCK_SIZE_BYTES (1024*1023)
+#define COMPRESSION_BLOCK_SIZE_BYTES (4*1024*1023)
 
 template <typename B>
 static inline void compress(const std::vector<B> &src, std::vector<std::byte> &dest,
