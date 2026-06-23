@@ -300,7 +300,6 @@ std::pair<uint64_t, streams> read_block(std::istream& in) {
     res.controls.swap(control);
     res.literals.swap(lit);
     res.lengths.swap(len);
-    for (auto& l : res.lengths) l++;
 
     return {h.orig_bytes, res};
 }

@@ -25,33 +25,25 @@ public:
         // Prevent UB when shifting by 64
         value &= (bits == 64) ? ~uint64_t{0} : (uint64_t{1} << bits) - 1;
 
-        if (bits_accumulated + bits >= 64) {
-            int space_left = 64 - bits_accumulated;
+        buf |= value << bits_accumulated;
+        bits_accumulated += bits;
 
-            if (space_left < 64) {
-                buf |= value << bits_accumulated;
-            } else {
-                buf = value;
-            }
-
+        if (bits_accumulated >= 64) {
             // Safe for all output iterators.
-            // Compilers will optimize to a single movq for contiguous iterators.
             auto* p = reinterpret_cast<const std::byte*>(&buf);
             for (int i = 0; i < 8; ++i) {
                 *out = p[i];
                 ++out;
             }
 
-            value >>= space_left;
-            bits -= space_left;
-
-            buf = 0;
-            bits_accumulated = 0;
-        }
-
-        if (bits > 0) {
-            buf |= value << bits_accumulated;
-            bits_accumulated += bits;
+            int excess_bits = bits_accumulated - 64;
+            if (excess_bits > 0) {
+                buf = value >> (bits - excess_bits);
+                bits_accumulated = excess_bits;
+            } else {
+                buf = 0;
+                bits_accumulated = 0;
+            }
         }
     }
 
@@ -85,36 +77,25 @@ public:
         if (bits == 0)
             return 0;
 
-        uint64_t value = 0;
-
-        if (bits_left < bits) {
-            value = buf;
-            size_t needed = bits - bits_left;
-
-            uint64_t next = 0;
-            auto*    p = reinterpret_cast<std::byte*>(&next);
-
-            // Safe for all input iterators.
-            for (int i = 0; i < 8; ++i) {
-                p[i] = *in;
-                ++in;
-            }
-
-            if (needed == 64) {
-                value = next;
-                buf = 0;
-                bits_left = 0;
-            } else {
-                value |= (next & ((uint64_t{1} << needed) - 1)) << bits_left;
-                buf = next >> needed;
-                bits_left = 64 - needed;
-            }
-        } else {
-            value = buf & ((bits == 64) ? ~uint64_t{0} : (uint64_t{1} << bits) - 1);
-            buf >>= bits;
-            bits_left -= bits;
+        // Refill byte-by-byte to maintain exact stream position synchronization
+        while (bits_left < static_cast<int>(bits)) {
+            uint64_t byte_val = static_cast<uint64_t>(static_cast<uint8_t>(*in));
+            ++in;
+            buf |= byte_val << bits_left;
+            bits_left += 8;
         }
+
+        uint64_t value =
+            buf & ((bits == 64) ? ~uint64_t{0} : (uint64_t{1} << bits) - 1);
+
+        if (bits == 64) {
+            buf = 0;
+        } else {
+            buf >>= bits;
+        }
+        bits_left -= bits;
 
         return value;
     }
 };
+

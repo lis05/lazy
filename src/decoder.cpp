@@ -24,7 +24,7 @@ void decoder::decode(size_t orig_size, std::byte* data,
             break;
         default:
             distance = distances_ptr[dist_i];
-            length = lengths_ptr[dist_i++];
+            length = static_cast<uint32_t>(lengths_ptr[dist_i++]) + 1;
 #ifdef LZMPODEBUG
             if (distance > data_i) {
                 throw std::runtime_error(
@@ -36,8 +36,4 @@ void decoder::decode(size_t orig_size, std::byte* data,
             data_i += length;
         }
     }
-
-    using namespace cyccpy;
-    std::cout << cnt32 << " " << cnt16 << " " << cnt8 << " " << " " << cnt1 << "\n";
-    std::cout << "s/l " << shorter << " " << longer << "\n";
 }
