@@ -67,13 +67,13 @@ if [ $dec_status -ne 0 ]; then
     if [ $dec_status -eq 139 ]; then
         echo "Error: Segmentation fault (Signal 11)"
     elif [ $dec_status -gt 128 ]; then
-        echo "Error: Terminated by signal $((enc_status - 128))"
+        echo "Error: Terminated by signal $((dec_status - 128))"
     fi
     echo "--- Stderr Output ---"
     echo "$dec_err" | grep -v "BENCHMARK:"
     echo "---------------------"
     echo "To debug this failure, run:"
-    echo "taskset -c ${DECODE_CORE} gdb --args $compressor -d -i $encoded_tmp -o $decoded_tmp"
+    echo "$compressor -e -i $to_encode -o $encoded_tmp -t $@ && taskset -c ${DECODE_CORE} gdb --args $compressor -d -i $encoded_tmp -o $decoded_tmp"
     exit 1
 fi
 
@@ -108,3 +108,4 @@ else
     echo "FAIL"
     exit 1
 fi
+

@@ -25,6 +25,12 @@ void decoder::decode(size_t orig_size, std::byte* data,
         default:
             distance = distances_ptr[dist_i];
             length = lengths_ptr[dist_i++];
+#ifdef LZMPODEBUG
+            if (distance > data_i) {
+                throw std::runtime_error(
+                    std::format("Invalid distance {} > {}", distance, data_i));
+            }
+#endif
             cyccpy::cyccpy(reinterpret_cast<uint8_t*>(data + data_i - distance),
                            distance, length);
             data_i += length;
@@ -32,6 +38,6 @@ void decoder::decode(size_t orig_size, std::byte* data,
     }
 
     using namespace cyccpy;
-    std::cout << cnt64 << " " << cnt32 << " " << cnt16 << " " << cnt8 << " " << cnt4
-              << " " << cnt1 << "\n";
+    std::cout << cnt32 << " " << cnt16 << " " << cnt8 << " " << " " << cnt1 << "\n";
+    std::cout << "s/l " << shorter << " " << longer << "\n";
 }

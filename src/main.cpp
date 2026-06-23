@@ -98,20 +98,19 @@ static void decode(auto &in, std::string filename, auto &pp) {
     decoder decoder;
 
     unsigned char mark;
-    if (!(in >> mark)) {
+    if (!in.get(reinterpret_cast<char &>(mark))) {
         throw std::runtime_error("Failed to read the input file");
     }
-
     auto format = formats::format::get_for_mark(mark);
     auto [orig_size, streams] = format.read_block(in);
 
     int fd = open(filename.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-    if (fd == -1 || ftruncate(fd, orig_size + 128) == -1) {
+    if (fd == -1 || ftruncate(fd, orig_size + 256) == -1) {
         throw std::runtime_error("Failed to open the output file");
     }
 
     std::byte *ptr = static_cast<std::byte *>(
-        mmap(nullptr, orig_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
+        mmap(nullptr, orig_size + 256, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
 
     decoder.decode(orig_size, ptr, streams);
 
@@ -267,7 +266,7 @@ int main(int argc, char **argv) {
 
     std::ofstream out(output_file, std::ios::binary);
     if (!out.is_open()) {
-        std::cerr << "Failed to write to " << input_file << std::endl;
+        std::cerr << "Failed to write to " << output_file << std::endl;
         return -1;
     }
 
