@@ -9,12 +9,12 @@ void decoder::decode(size_t orig_size, std::byte* data,
     uint32_t data_i = 0;
     uint32_t lit_i = 0;
     uint32_t dist_i = 0;
-    auto     sz = s.controls.size();
+    auto     sz = s.n_controls;
 
-    auto     controls_ptr = s.controls.data();
-    auto     literals_ptr = s.literals.data();
-    auto     lengths_ptr = s.lengths.data();
-    auto     distances_ptr = s.distances.data();
+    auto     controls_ptr = s.controls;
+    auto     literals_ptr = s.literals;
+    auto     lengths_ptr = s.lengths;
+    auto     distances_ptr = s.distances;
     uint32_t distance, length;
 
     for (uint32_t i = 0; i < sz; i++) {

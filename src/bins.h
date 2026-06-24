@@ -96,17 +96,17 @@ struct bins_cfg {
         return info{ctx, extra_bits, base};
     }
 
+    static info precalculated[MaxBins];
+
     static constexpr inline info get_from_ctx(uint64_t c) {
         if (c <= MAX_RESERVED) {
             return info{c, 0, c};
         }
 
-#ifdef LZMPODEBUG
         if (c >= MaxBins) {
             throw std::runtime_error(std::format(
                 "Bad context {}. Cannot process: too large ctx/value range. :C", c));
         }
-#endif
 
         uint64_t c_prime = c - MAX_RESERVED - 1;
         uint64_t extra_bits = (c_prime / Slots) + 1;
@@ -114,14 +114,22 @@ struct bins_cfg {
         uint64_t Vk = MAX_RESERVED + 1 + Slots * ((1ULL << extra_bits) - 2);
         uint64_t base = Vk + (offset << extra_bits);
 
-#ifdef LZMPODEBUG
         if (base > MAX_VAL()) {
             throw std::runtime_error(std::format(
                 "Bad context {}. Cannot process: too large ctx/value range. :C", c));
         }
-#endif
 
         return info{c, extra_bits, base};
+    }
+
+    static void precalc() {
+        for (uint64_t c = 0; c < MaxBins; c++) {
+            try {
+                precalculated[c] = get_from_ctx(c);
+            } catch (const std::runtime_error&) {
+                break;
+            }
+        }
     }
 };
 
@@ -222,3 +230,6 @@ struct bins_cfg {
 
 using dist_bins = bins_cfg<3, 8>;
 
+template <uint64_t ReservedBits, uint64_t Slots, uint64_t MaxBins>
+typename bins_cfg<ReservedBits, Slots, MaxBins>::info
+    bins_cfg<ReservedBits, Slots, MaxBins>::precalculated[MaxBins];

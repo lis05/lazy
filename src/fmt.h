@@ -18,15 +18,16 @@ struct header {
     uint32_t bytes_len;
     uint32_t bytes_extra_dist;
 
-    friend std::ostream& operator<<(std::ostream& out, const header& h);
-    static const std::byte* read(header &h, const std::byte* ptr);
+    friend std::ostream&    operator<<(std::ostream& out, const header& h);
+    static const std::byte* read(header& h, const std::byte* ptr);
 };
 
 struct streams {
-    std::vector<std::byte> controls;
-    std::vector<std::byte> literals;
-    std::vector<uint32_t>  distances;
-    std::vector<uint8_t>   lengths;
+    uint32_t   n_controls;
+    std::byte* controls;
+    std::byte* literals;
+    uint32_t*  distances;
+    uint8_t*   lengths;
 };
 
 void verify_config();

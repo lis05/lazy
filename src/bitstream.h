@@ -75,86 +75,6 @@ public:
     }
 
     inline uint64_t read(size_t bits) {
-#ifdef LZMPODEBUG
-        int bits_to_read = static_cast<int>(bits) - bits_left;
-        if (bits_to_read > 32) {
-            throw std::runtime_error(
-                std::format("bits_to_read={} bits={} bits_left={} > 32",
-                            bits_to_read, bits, bits_left));
-        }
-#endif
-#if 0
-        switch (bits_to_read) {
-        case 1:
-        case 2:
-        case 3:
-        case 4:
-        case 5:
-        case 6:
-        case 7:
-        case 8:
-            buf |= static_cast<uint64_t>(static_cast<uint8_t>(in[0])) << bits_left;
-            ++in;
-            bits_left += 8;
-            break;
-        case 9:
-        case 10:
-        case 11:
-        case 12:
-        case 13:
-        case 14:
-        case 15:
-        case 16:
-            buf |= static_cast<uint64_t>(static_cast<uint8_t>(in[0])) << bits_left;
-            buf |= static_cast<uint64_t>(static_cast<uint8_t>(in[1]))
-                   << (bits_left + 8);
-            in += 2;
-            bits_left += 16;
-            break;
-        case 17:
-        case 18:
-        case 19:
-        case 20:
-        case 21:
-        case 22:
-        case 23:
-        case 24:
-            buf |= static_cast<uint64_t>(static_cast<uint8_t>(in[0])) << bits_left;
-            buf |= static_cast<uint64_t>(static_cast<uint8_t>(in[1]))
-                   << (bits_left + 8);
-            buf |= static_cast<uint64_t>(static_cast<uint8_t>(in[2]))
-                   << (bits_left + 16);
-            in += 3;
-            bits_left += 24;
-            break;
-        case 25:
-        case 26:
-        case 27:
-        case 28:
-        case 29:
-        case 30:
-        case 31:
-        case 32:
-            buf |= static_cast<uint64_t>(static_cast<uint8_t>(in[0])) << bits_left;
-            buf |= static_cast<uint64_t>(static_cast<uint8_t>(in[1]))
-                   << (bits_left + 8);
-            buf |= static_cast<uint64_t>(static_cast<uint8_t>(in[2]))
-                   << (bits_left + 16);
-            buf |= static_cast<uint64_t>(static_cast<uint8_t>(in[3]))
-                   << (bits_left + 24);
-            in += 4;
-            bits_left += 32;
-            break;
-        }
-#endif
-#if 0
-        while (bits_left < static_cast<int>(bits)) {
-            buf |= static_cast<uint64_t>(static_cast<uint8_t>(*in)) << bits_left;
-            ++in;
-            bits_left += 8;
-        }
-#endif
-#if 1
         // assuming bits <= 32, which is true in our case :3
         if (bits_left < static_cast<int>(bits)) {
             uint32_t new_data;
@@ -163,7 +83,6 @@ public:
             in += sizeof(new_data);
             bits_left += 32;
         }
-#endif
 
         uint64_t value = buf & ((uint64_t{1} << bits) - 1);
 

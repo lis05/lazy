@@ -139,9 +139,9 @@ static void decompress_vect(const std::byte* from, uint32_t bytes, std::byte* to
 
     if (flag == std::byte{0}) {
         ::turborc::decompress<::turborc::rcmrrssdec, PRM0, PRM1>(from, bytes - 1,
-                                                                 to);
+                                                                 to, to_size);
     } else if (flag == std::byte{1}) {
-        ::turborc::decompress<::turborc::anscdf1dec>(from, bytes - 1, to);
+        ::turborc::decompress<::turborc::anscdf1dec>(from, bytes - 1, to, to_size);
     } else if (flag == std::byte{2}) {
         ::fse::decompress(from, bytes - 1, to);
     } else if (flag == std::byte{3}) {
@@ -243,24 +243,25 @@ std::pair<uint64_t, streams> read_block(const std::byte* ptr) {
     const std::byte* len_ptr = dist_ptr + h.bytes_dist;
     const std::byte* extra_ptr = len_ptr + h.bytes_len;
 
-    std::vector<std::byte> control(h.n_control);
-    std::vector<std::byte> lit(h.n_lit);
-    std::vector<std::byte> dist(h.n_dist);
-    std::vector<uint8_t>   len(h.n_len);
+    auto control =
+        static_cast<std::byte*>(std::malloc(h.n_control * sizeof(std::byte)));
+    auto lit = static_cast<std::byte*>(std::malloc(h.n_lit * sizeof(std::byte)));
+    auto dist = static_cast<std::byte*>(std::malloc(h.n_dist * sizeof(std::byte)));
+    auto len = static_cast<uint8_t*>(std::malloc(h.n_len * sizeof(uint8_t)));
 
     decompress_vect(control_ptr, h.bytes_control,
-                    reinterpret_cast<std::byte*>(control.data()), h.n_control);
-    decompress_vect(lit_ptr, h.bytes_lit, reinterpret_cast<std::byte*>(lit.data()),
+                    reinterpret_cast<std::byte*>(control), h.n_control);
+    decompress_vect(lit_ptr, h.bytes_lit, reinterpret_cast<std::byte*>(lit),
                     h.n_lit);
-    decompress_vect(dist_ptr, h.bytes_dist,
-                    reinterpret_cast<std::byte*>(dist.data()), h.n_dist);
-    decompress_vect(len_ptr, h.bytes_len, reinterpret_cast<std::byte*>(len.data()),
+    decompress_vect(dist_ptr, h.bytes_dist, reinterpret_cast<std::byte*>(dist),
+                    h.n_dist);
+    decompress_vect(len_ptr, h.bytes_len, reinterpret_cast<std::byte*>(len),
                     h.n_len);
 
     bit_reader reader(extra_ptr);
 
     streams res;
-    res.distances.resize(h.n_len);
+    res.distances = static_cast<uint32_t*>(std::malloc(h.n_len * sizeof(uint32_t)));
 
     size_t   dist_i = 0;
     size_t   lit_idx = 0;
@@ -294,23 +295,24 @@ std::pair<uint64_t, streams> read_block(const std::byte* ptr) {
             res.distances[dist_i++] = d;
             break;
         default:
-            d_ctx = static_cast<uint32_t>(dist[dist_idx++]);
-            dbins = dist_bins::get_from_ctx(d_ctx);
+            [[likely]] d_ctx = static_cast<uint32_t>(dist[dist_idx++]);
+            dbins = dist_bins::precalculated[d_ctx];
             d_val = reader.read(dbins.extra_bits);
             d = dbins.base + d_val;
             dist_cache[2] = dist_cache[1];
             dist_cache[1] = dist_cache[0];
             dist_cache[0] = d;
             res.distances[dist_i++] = d;
+            [[fallthrough]];
         case 0:
             break;
         }
     }
 
-    res.controls.swap(control);
-    res.literals.swap(lit);
-    res.lengths.swap(len);
-
+    res.n_controls = h.n_control;
+    res.controls = control;
+    res.literals = lit;
+    res.lengths = len;
     return {h.orig_bytes, res};
 }
 }  // namespace formats::main

@@ -11,6 +11,7 @@
 #include <latch>
 #include <map>
 
+#include "bins.h"
 #include "config.h"
 #include "decoder.h"
 #include "estimators.h"
@@ -121,6 +122,10 @@ static void decode(const std::string &filename_in, const std::string &filename_o
 
     decoder.decode(orig_size, ptr_out, streams);
 
+    std::free(streams.controls);
+    std::free(streams.literals);
+    std::free(streams.distances);
+    std::free(streams.lengths);
     munmap(ptr_out, orig_size);
     munmap(ptr_in, in_size);
 
@@ -162,6 +167,8 @@ public:
 };
 
 int main(int argc, char **argv) {
+    dist_bins::precalc();
+
     CLI::App app{"lzmpo: LZ77 multiple prefixes optimal compressor"};
     app.formatter(std::make_shared<CleanFormatter>());
     argv = app.ensure_utf8(argv);
