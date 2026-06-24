@@ -1,4 +1,5 @@
 #include "config.h"
+
 #include <unistd.h>
 
 #include <chrono>
@@ -273,9 +274,9 @@ void config::apply_level(size_t file_size) {
         block_size = file_size;
         window_size = file_size;
         future_limit = 256;
-        max_matches = 0;
+        max_matches = 6000;
         divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5};
+        prefix_lengths = std::vector<uint32_t>{5, 6, 8, 12, 16, 20, 24, 28, 32};
         return;
     };
 }

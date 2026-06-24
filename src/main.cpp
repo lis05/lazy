@@ -205,7 +205,8 @@ int main(int argc, char **argv) {
         "-6", config::level[6],
         "Same as --fit --mm 2000 -k<supported threads> --pl 5,6,8,12,16,20,24");
     level_group->add_flag("-7", config::level[7],
-                          "Same as --fit --mm 0 -k<supported threads> --pl 5");
+                          "Same as --fit --mm 6000 -k<supported threads> --pl "
+                          "5,6,8,12,16,20,24,28,32");
 
     auto advanced_group = app.add_option_group("Advanced flags");
     bool set_max_windows = false;
