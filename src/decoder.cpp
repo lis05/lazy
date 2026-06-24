@@ -6,34 +6,31 @@
 void decoder::decode(size_t orig_size, std::byte* data,
                      const formats::main::streams& s) {
     config::print_message("Restoring original file\n");
-    uint32_t data_i = 0;
-    uint32_t lit_i = 0;
-    uint32_t dist_i = 0;
-    auto     sz = s.n_controls;
+    auto sz = s.n_controls;
 
-    auto     controls_ptr = s.controls;
-    auto     literals_ptr = s.literals;
-    auto     lengths_ptr = s.lengths;
-    auto     distances_ptr = s.distances;
-    uint32_t distance, length;
+    const auto data_base = data;
+    auto       controls_ptr = s.controls;
+    auto       literals_ptr = s.literals;
+    auto       lengths_ptr = s.lengths;
+    auto       distances_ptr = s.distances;
+    uint32_t   distance, length;
 
     for (uint32_t i = 0; i < sz; i++) {
-        switch (static_cast<uint8_t>(controls_ptr[i])) {
-        case 0:
-            data[data_i++] = literals_ptr[lit_i++];
-            break;
-        default: [[likely]]
-            distance = distances_ptr[dist_i];
-            length = static_cast<uint32_t>(lengths_ptr[dist_i++]) + 1;
+        if (*controls_ptr == std::byte{0}) {
+            *(data++) = *(literals_ptr++);
+        } else {
+            distance = *(distances_ptr++);
 #ifdef LZMPODEBUG
-            if (distance > data_i) [[unlikely]] {
+            if (distance > static_cast<uint32_t>(data - data_base)) [[unlikely]] {
                 throw std::runtime_error(
                     std::format("Invalid distance {} > {}", distance, data_i));
             }
 #endif
-            cyccpy::cyccpy(reinterpret_cast<uint8_t*>(data + data_i - distance),
-                           distance, length);
-            data_i += length;
+            length = static_cast<uint32_t>(*(lengths_ptr++)) + 1;
+            cyccpy::cyccpy(reinterpret_cast<uint8_t*>(data - distance), distance,
+                           length);
+            data += length;
         }
+        controls_ptr++;
     }
 }

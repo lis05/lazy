@@ -16,7 +16,7 @@ static inline void memcpy1(uint8_t* dest, uint8_t* src) {
 }
 
 static inline void memcpy8(uint8_t* dest, uint8_t* src) {
-    *(reinterpret_cast<uint64_t*>(dest)) = *(reinterpret_cast<uint64_t*>(src));
+    std::memcpy(dest, src, 8);
 }
 
 static inline void memcpy16(uint8_t* dest, uint8_t* src) {
@@ -29,49 +29,7 @@ static inline void memcpy32(uint8_t* dest, uint8_t* src) {
     _mm256_storeu_si256(reinterpret_cast<__m256i*>(dest), reg);
 }
 
-static inline void cyccpy1(uint8_t* src, uint32_t dis, uint32_t n) {
-    // n >= 5
-    uint32_t i = 5;
-    src[0 + dis] = src[0];
-    src[1 + dis] = src[1];
-    src[2 + dis] = src[2];
-    src[3 + dis] = src[3];
-    src[4 + dis] = src[4];
-    while (i < n) {
-        src[i + dis] = src[i];
-        i++;
-    }
-}
-
-static inline void cyccpy8(uint8_t* src, uint32_t dis, uint32_t n) {
-    if (dis >= 8) [[likely]] {
-        uint32_t i = 8;
-        memcpy8(src + dis, src);
-        while (i < n) {
-            i += 8;
-            src += 8;
-            memcpy8(src + dis, src);
-        }
-    } else {
-        cyccpy1(src, dis, n);
-    }
-}
-
-static inline void cyccpy16(uint8_t* src, uint32_t dis, uint32_t n) {
-    if (dis >= 16) [[likely]] {
-        uint32_t i = 16;
-        memcpy16(src + dis, src);
-        while (i < n) [[unlikely]] {
-            i += 16;
-            src += 16;
-            memcpy16(src + dis, src);
-        }
-    } else {
-        cyccpy8(src, dis, n);
-    }
-}
-
-static inline void cyccpy32(uint8_t* src, uint32_t dis, uint32_t n) {
+static inline void cyccpy(uint8_t* src, uint32_t dis, uint32_t n) {
     if (dis >= 32) [[likely]] {
         uint32_t i = 32;
         memcpy32(src + dis, src);
@@ -80,12 +38,34 @@ static inline void cyccpy32(uint8_t* src, uint32_t dis, uint32_t n) {
             src += 32;
             memcpy32(src + dis, src);
         }
+    } else if (dis >= 16) {
+        uint32_t i = 16;
+        memcpy16(src + dis, src);
+        while (i < n) [[unlikely]] {
+            i += 16;
+            src += 16;
+            memcpy16(src + dis, src);
+        }
+    } else if (dis >= 8) {
+        uint32_t i = 8;
+        memcpy8(src + dis, src);
+        while (i < n) {
+            i += 8;
+            src += 8;
+            memcpy8(src + dis, src);
+        }
     } else {
-        cyccpy16(src, dis, n);
+        // n >= 5
+        uint32_t i = 5;
+        src[0 + dis] = src[0];
+        src[1 + dis] = src[1];
+        src[2 + dis] = src[2];
+        src[3 + dis] = src[3];
+        src[4 + dis] = src[4];
+        while (i < n) {
+            src[i + dis] = src[i];
+            i++;
+        }
     }
-}
-
-static inline void cyccpy(uint8_t* src, uint32_t dis, uint32_t n) {
-    cyccpy32(src, dis, n);
 }
 }  // namespace cyccpy
