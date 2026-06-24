@@ -30,7 +30,13 @@ static inline void memcpy32(uint8_t* dest, uint8_t* src) {
 }
 
 static inline void cyccpy1(uint8_t* src, uint32_t dis, uint32_t n) {
-    uint32_t i = 0;
+    // n >= 5
+    uint32_t i = 5;
+    src[0 + dis] = src[0];
+    src[1 + dis] = src[1];
+    src[2 + dis] = src[2];
+    src[3 + dis] = src[3];
+    src[4 + dis] = src[4];
     while (i < n) {
         src[i + dis] = src[i];
         i++;
@@ -41,7 +47,7 @@ static inline void cyccpy8(uint8_t* src, uint32_t dis, uint32_t n) {
     if (dis >= 8) [[likely]] {
         uint32_t i = 8;
         memcpy8(src + dis, src);
-        while (i < n) [[unlikely]] {
+        while (i < n) {
             i += 8;
             src += 8;
             memcpy8(src + dis, src);

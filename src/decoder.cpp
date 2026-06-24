@@ -22,11 +22,11 @@ void decoder::decode(size_t orig_size, std::byte* data,
         case 0:
             data[data_i++] = literals_ptr[lit_i++];
             break;
-        default:
+        default: [[likely]]
             distance = distances_ptr[dist_i];
             length = static_cast<uint32_t>(lengths_ptr[dist_i++]) + 1;
 #ifdef LZMPODEBUG
-            if (distance > data_i) {
+            if (distance > data_i) [[unlikely]] {
                 throw std::runtime_error(
                     std::format("Invalid distance {} > {}", distance, data_i));
             }

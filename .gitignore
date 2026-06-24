@@ -11,8 +11,12 @@ __pycache__
 stats
 datasets/enwik/enwik8.*
 datasets/enwik/enwik9
+datasets/enwik8
+datasets/enwik9
 .build_mode
 .hashchains*
 .tokens*
 .zstd*
+.xz*
 project.txt
+.benchmarks*

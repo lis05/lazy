@@ -29,8 +29,8 @@ trap cleanup EXIT
 
 echo "Encoding..."
 exec 3>&1
-# Capture peak RSS (%M), User CPU (%U), and System CPU (%S)
-enc_err=$({ /usr/bin/time -f "BENCHMARK: %M %U %S" "$compressor" -e -i "$to_encode" -o "$encoded_tmp" -t "$@"; } 2>&1 1>&3)
+# Capture peak RSS (%M) and Wall clock time (%e)
+enc_err=$({ /usr/bin/time -f "BENCHMARK: %M %e" "$compressor" -e -i "$to_encode" -o "$encoded_tmp" -t "$@"; } 2>&1 1>&3)
 enc_status=$?
 exec 3>&-
 
@@ -45,14 +45,13 @@ if [ $enc_status -ne 0 ]; then
     echo "$enc_err" | grep -v "BENCHMARK:"
     echo "---------------------"
     echo "To debug this failure, run:"
-    echo "gdb --args $compressor -e -i $to_encode -o $encoded_tmp -t $@"
+    echo "gdb --args $compressor -e -i $to_encode -o $encoded_tmp -t $*"
     exit 1
 fi
 
 enc_kb=$(echo "$enc_err" | awk '/BENCHMARK:/ {print $2}')
-enc_user=$(echo "$enc_err" | awk '/BENCHMARK:/ {print $3}')
-enc_sys=$(echo "$enc_err" | awk '/BENCHMARK:/ {print $4}')
-enc_sec=$(awk -v u="$enc_user" -v s="$enc_sys" 'BEGIN {printf "%.2f", u + s}')
+enc_wall=$(echo "$enc_err" | awk '/BENCHMARK:/ {print $3}')
+enc_sec=$(awk -v w="$enc_wall" 'BEGIN {printf "%.2f", w}')
 
 echo "Decoding (Pinned to core ${DECODE_CORE}, forced single-thread)..."
 exec 4>&1
@@ -73,7 +72,7 @@ if [ $dec_status -ne 0 ]; then
     echo "$dec_err" | grep -v "BENCHMARK:"
     echo "---------------------"
     echo "To debug this failure, run:"
-    echo "$compressor -e -i $to_encode -o $encoded_tmp -t $@ && taskset -c ${DECODE_CORE} gdb --args $compressor -d -i $encoded_tmp -o $decoded_tmp"
+    echo "$compressor -e -i $to_encode -o $encoded_tmp -t $* && taskset -c ${DECODE_CORE} gdb --args $compressor -d -i $encoded_tmp -o $decoded_tmp"
     exit 1
 fi
 
@@ -94,8 +93,8 @@ enc_mb=$(awk -v k="$enc_kb" 'BEGIN {printf "%.2f", k/1024}')
 dec_mb=$(awk -v k="$dec_kb" 'BEGIN {printf "%.2f", k/1024}')
 
 echo "    Compression: $(phsize "$encoded_tmp") ($(psize "$encoded_tmp") bytes) / $(phsize "$to_encode") [Ratio: ${ratio}%]"
-echo "    CPU Time (Enc): ${enc_sec} s"
-echo "    Precise Time (Dec): ${dec_sec} s"
+echo "    Compression Time   : ${enc_sec} s"
+echo "    Decompression Time : ${dec_sec} s"
 echo "    Max RAM Usage (Enc): ${enc_mb} MB"
 echo "    Max RAM Usage (Dec): ${dec_mb} MB"
 
@@ -108,4 +107,3 @@ else
     echo "FAIL"
     exit 1
 fi
-
