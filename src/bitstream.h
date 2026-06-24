@@ -61,27 +61,23 @@ public:
     }
 };
 
-template <typename It>
-    requires std::input_iterator<It> &&
-             std::same_as<std::iter_value_t<It>, std::byte>
 class bit_reader {
-    It       in;
-    uint64_t buf;
-    int      bits_left;
+    const std::byte* in;
+    uint64_t         buf;
+    int              bits_left;
 
 public:
-    bit_reader(It in) : in(in), buf(0), bits_left(0) {
+    explicit bit_reader(const std::byte* in) : in(in), buf(0), bits_left(0) {
     }
 
     inline uint64_t read(size_t bits) {
         if (bits == 0)
             return 0;
 
-        // Refill byte-by-byte to maintain exact stream position synchronization
+        // Efficient direct pointer access without iterator abstraction overhead
         while (bits_left < static_cast<int>(bits)) {
-            uint64_t byte_val = static_cast<uint64_t>(static_cast<uint8_t>(*in));
+            buf |= static_cast<uint64_t>(static_cast<uint8_t>(*in)) << bits_left;
             ++in;
-            buf |= byte_val << bits_left;
             bits_left += 8;
         }
 
@@ -93,9 +89,12 @@ public:
         } else {
             buf >>= bits;
         }
-        bits_left -= bits;
+        bits_left -= static_cast<int>(bits);
 
         return value;
     }
-};
 
+    inline const std::byte* get_ptr() const {
+        return in;
+    }
+};

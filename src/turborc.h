@@ -43,26 +43,17 @@ static inline void compress(const std::vector<B>   &src,
     dest.resize(count + 1);
 }
 
-template <auto Dec, typename B, size_t... Params>
-static inline void decompress(const std::vector<std::byte> &src,
-                              std::vector<B>               &dest) {
+template <auto Dec, size_t... Params>
+static inline void decompress(const std::byte *from, uint32_t bytes, std::byte *to) {
     auto *dec = Dec;
-    if (src.empty()) {
-        dest.clear();
-        return;
-    }
 
-    std::byte is_copy = src[0];
+    std::byte is_copy = from[0];
     if (is_copy == YES_COPY) {
-        dest.resize((src.size() - 1) / sizeof(B));
-        std::memcpy(dest.data(), src.data() + 1, src.size() - 1);
+        std::memcpy(to, from, bytes);
     } else {
-        size_t count =
-            dec(const_cast<unsigned char *>(
-                    reinterpret_cast<const unsigned char *>(src.data() + 1)),
-                dest.size() * sizeof(B),
-                reinterpret_cast<unsigned char *>(dest.data()), Params...);
-        dest.resize(count / sizeof(B));
+        size_t count = dec(const_cast<unsigned char *>(
+                               reinterpret_cast<const unsigned char *>(from)),
+                           bytes, reinterpret_cast<unsigned char *>(to), Params...);
     }
 }
 }  // namespace turborc

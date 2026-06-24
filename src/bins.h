@@ -1,8 +1,6 @@
 #pragma once
-#include <cstddef>
-#include <cstdint>
-
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <format>
 #include <limits>
@@ -29,7 +27,7 @@ struct bins_cfg {
         return x == 0 ? 0 : 63 - std::countl_zero(x);
     }
 
-    static constexpr uint64_t MAX_VAL() {
+    static consteval uint64_t MAX_VAL() {
         if (MaxBins <= MAX_RESERVED + 1) {
             return MaxBins - 1;
         }
@@ -81,10 +79,12 @@ struct bins_cfg {
             return info{x, 0, x};
         }
 
+#ifdef LZMPODEBUG
         if (x > MAX_VAL()) {
             throw std::runtime_error(std::format(
                 "Bad number {}. Cannot process: too large ctx/value range. :C", x));
         }
+#endif
 
         uint64_t Y = x - MAX_RESERVED - 1 + 2 * Slots;
         uint64_t extra_bits = blog2(Y / Slots);
@@ -101,10 +101,12 @@ struct bins_cfg {
             return info{c, 0, c};
         }
 
+#ifdef LZMPODEBUG
         if (c >= MaxBins) {
             throw std::runtime_error(std::format(
                 "Bad context {}. Cannot process: too large ctx/value range. :C", c));
         }
+#endif
 
         uint64_t c_prime = c - MAX_RESERVED - 1;
         uint64_t extra_bits = (c_prime / Slots) + 1;
@@ -112,10 +114,12 @@ struct bins_cfg {
         uint64_t Vk = MAX_RESERVED + 1 + Slots * ((1ULL << extra_bits) - 2);
         uint64_t base = Vk + (offset << extra_bits);
 
+#ifdef LZMPODEBUG
         if (base > MAX_VAL()) {
             throw std::runtime_error(std::format(
                 "Bad context {}. Cannot process: too large ctx/value range. :C", c));
         }
+#endif
 
         return info{c, extra_bits, base};
     }

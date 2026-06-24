@@ -2075,7 +2075,7 @@ int main(int argc, char **argv) {
 #include <cstring>
 #include <vector>
 
-#define COMPRESSION_BLOCK_SIZE_BYTES (4*1024*1023)
+#define COMPRESSION_BLOCK_SIZE_BYTES (4 * 1024 * 1023)
 
 template <typename B>
 static inline void compress(const std::vector<B> &src, std::vector<std::byte> &dest,
@@ -2113,33 +2113,30 @@ static inline void compress(const std::vector<B> &src, std::vector<std::byte> &d
     }
 }
 
-template <typename B>
-static inline void decompress(const std::vector<std::byte> &src,
-                              std::vector<B> &dest, int order) {
-    if (src.empty()) {
-        dest.clear();
+static inline void decompress(const std::byte *from, uint32_t bytes, std::byte *to,
+                              uint32_t uncompressed_bytes, int order) {
+    if (bytes == 0 || uncompressed_bytes == 0) {
         return;
     }
 
-    unsigned char *dest_ptr = reinterpret_cast<unsigned char *>(dest.data());
-    size_t         total_dest_bytes = dest.size() * sizeof(B);
+    unsigned char *dest_ptr = reinterpret_cast<unsigned char *>(to);
     size_t         dest_offset = 0;
     size_t         src_offset = 0;
 
-    while (src_offset < src.size() && dest_offset < total_dest_bytes) {
+    while (src_offset < bytes && dest_offset < uncompressed_bytes) {
         unsigned int comp_size = 0;
-        std::memcpy(&comp_size, src.data() + src_offset, sizeof(unsigned int));
+        std::memcpy(&comp_size, from + src_offset, sizeof(unsigned int));
         src_offset += sizeof(unsigned int);
 
         unsigned int expected_uncomp_size =
             static_cast<unsigned int>(std::min<size_t>(
-                COMPRESSION_BLOCK_SIZE_BYTES, total_dest_bytes - dest_offset));
+                COMPRESSION_BLOCK_SIZE_BYTES, uncompressed_bytes - dest_offset));
 
         unsigned int actual_uncomp_size = expected_uncomp_size;
 
         rans_uncompress_to_32x16(
             const_cast<unsigned char *>(
-                reinterpret_cast<const unsigned char *>(src.data() + src_offset)),
+                reinterpret_cast<const unsigned char *>(from + src_offset)),
             comp_size, dest_ptr + dest_offset, &actual_uncomp_size, order);
 
         src_offset += comp_size;

@@ -14,21 +14,6 @@
 
 namespace formats::main {
 
-std::istream& operator>>(std::istream& in, header& h) {
-    in.read(reinterpret_cast<char*>(&h.orig_bytes), sizeof(h.orig_bytes));
-    in.read(reinterpret_cast<char*>(&h.n_control), sizeof(h.n_control));
-    in.read(reinterpret_cast<char*>(&h.n_lit), sizeof(h.n_lit));
-    in.read(reinterpret_cast<char*>(&h.n_dist), sizeof(h.n_dist));
-    in.read(reinterpret_cast<char*>(&h.n_len), sizeof(h.n_len));
-    in.read(reinterpret_cast<char*>(&h.bytes_control), sizeof(h.bytes_control));
-    in.read(reinterpret_cast<char*>(&h.bytes_lit), sizeof(h.bytes_lit));
-    in.read(reinterpret_cast<char*>(&h.bytes_dist), sizeof(h.bytes_dist));
-    in.read(reinterpret_cast<char*>(&h.bytes_len), sizeof(h.bytes_len));
-    in.read(reinterpret_cast<char*>(&h.bytes_extra_dist),
-            sizeof(h.bytes_extra_dist));
-    return in;
-}
-
 std::ostream& operator<<(std::ostream& out, const header& h) {
     out.write(reinterpret_cast<const char*>(&h.orig_bytes), sizeof(h.orig_bytes));
     out.write(reinterpret_cast<const char*>(&h.n_control), sizeof(h.n_control));
@@ -45,6 +30,29 @@ std::ostream& operator<<(std::ostream& out, const header& h) {
     return out;
 }
 
+const std::byte* header::read(header& h, const std::byte* ptr) {
+    std::memcpy(&h.orig_bytes, ptr, sizeof(h.orig_bytes));
+    ptr += sizeof(h.orig_bytes);
+    std::memcpy(&h.n_control, ptr, sizeof(h.n_control));
+    ptr += sizeof(h.n_control);
+    std::memcpy(&h.n_lit, ptr, sizeof(h.n_lit));
+    ptr += sizeof(h.n_lit);
+    std::memcpy(&h.n_dist, ptr, sizeof(h.n_dist));
+    ptr += sizeof(h.n_dist);
+    std::memcpy(&h.n_len, ptr, sizeof(h.n_len));
+    ptr += sizeof(h.n_len);
+    std::memcpy(&h.bytes_control, ptr, sizeof(h.bytes_control));
+    ptr += sizeof(h.bytes_control);
+    std::memcpy(&h.bytes_lit, ptr, sizeof(h.bytes_lit));
+    ptr += sizeof(h.bytes_lit);
+    std::memcpy(&h.bytes_dist, ptr, sizeof(h.bytes_dist));
+    ptr += sizeof(h.bytes_dist);
+    std::memcpy(&h.bytes_len, ptr, sizeof(h.bytes_len));
+    ptr += sizeof(h.bytes_len);
+    std::memcpy(&h.bytes_extra_dist, ptr, sizeof(h.bytes_extra_dist));
+    ptr += sizeof(h.bytes_extra_dist);
+    return ptr;
+}
 void verify_config() {
     if (config::block_size == 0) {
         throw std::runtime_error("Invalid block size: 0");
@@ -124,31 +132,26 @@ static void compress_vect(const auto& vect, auto& res) {
     }
 }
 
-static void decompress_vect(const auto& vect, auto& res) {
-    using T = typename std::decay_t<decltype(res)>::value_type;
-
-    if (vect.empty()) {
-        res.clear();
-        return;
-    }
-
-    std::byte              flag = vect[0];
-    std::vector<std::byte> src(vect.begin() + 1, vect.end());
+static void decompress_vect(const std::byte* from, uint32_t bytes, std::byte* to,
+                            uint32_t to_size) {
+    std::byte flag = from[0];
+    from++;
 
     if (flag == std::byte{0}) {
-        ::turborc::decompress<::turborc::rcmrrssdec, T, PRM0, PRM1>(src, res);
+        ::turborc::decompress<::turborc::rcmrrssdec, PRM0, PRM1>(from, bytes - 1,
+                                                                 to);
     } else if (flag == std::byte{1}) {
-        ::turborc::decompress<::turborc::anscdf1dec, T>(src, res);
+        ::turborc::decompress<::turborc::anscdf1dec>(from, bytes - 1, to);
     } else if (flag == std::byte{2}) {
-        ::fse::decompress<T>(src, res);
+        ::fse::decompress(from, bytes - 1, to);
     } else if (flag == std::byte{3}) {
-        ::huf::decompress<T>(src, res);
+        ::huf::decompress(from, bytes - 1, to);
     } else if (flag == std::byte{4}) {
-        std::memcpy(res.data(), src.data(), src.size());
+        std::memcpy(to, from, bytes);
     } else if (flag == std::byte{5}) {
-        ::rans_static::decompress<T>(src, res, 0);
+        ::rans_static::decompress(from, bytes - 1, to, to_size, 0);
     } else if (flag == std::byte{6}) {
-        ::rans_static::decompress<T>(src, res, 1);
+        ::rans_static::decompress(from, bytes - 1, to, to_size, 1);
     } else {
         throw std::runtime_error("Unknown compression flag");
     }
@@ -229,71 +232,78 @@ void write_block(const std::vector<token>& tokens, std::ostream& out) {
     out.write(reinterpret_cast<const char*>(extra_dist.data()), extra_dist.size());
 }
 
-std::pair<uint64_t, streams> read_block(std::istream& in) {
+std::pair<uint64_t, streams> read_block(const std::byte* ptr) {
     config::print_message("Decoding tokens (may take a while)\n");
     header h;
-    if (!(in >> h)) {
-        return {};
-    }
+    ptr = header::read(h, ptr);
 
-    std::vector<std::byte> out_control(h.bytes_control);
-    std::vector<std::byte> out_lit(h.bytes_lit);
-    std::vector<std::byte> out_dist(h.bytes_dist);
-    std::vector<std::byte> out_len(h.bytes_len);
-    std::vector<std::byte> extra_dist(h.bytes_extra_dist);
-
-    in.read(reinterpret_cast<char*>(out_control.data()), out_control.size());
-    in.read(reinterpret_cast<char*>(out_lit.data()), out_lit.size());
-    in.read(reinterpret_cast<char*>(out_dist.data()), out_dist.size());
-    in.read(reinterpret_cast<char*>(out_len.data()), out_len.size());
-    in.read(reinterpret_cast<char*>(extra_dist.data()), extra_dist.size());
+    const std::byte* control_ptr = ptr;
+    const std::byte* lit_ptr = control_ptr + h.bytes_control;
+    const std::byte* dist_ptr = lit_ptr + h.bytes_lit;
+    const std::byte* len_ptr = dist_ptr + h.bytes_dist;
+    const std::byte* extra_ptr = len_ptr + h.bytes_len;
 
     std::vector<std::byte> control(h.n_control);
     std::vector<std::byte> lit(h.n_lit);
     std::vector<std::byte> dist(h.n_dist);
     std::vector<uint8_t>   len(h.n_len);
 
-    decompress_vect(out_control, control);
-    decompress_vect(out_lit, lit);
-    decompress_vect(out_dist, dist);
-    decompress_vect(out_len, len);
+    decompress_vect(control_ptr, h.bytes_control,
+                    reinterpret_cast<std::byte*>(control.data()), h.n_control);
+    decompress_vect(lit_ptr, h.bytes_lit, reinterpret_cast<std::byte*>(lit.data()),
+                    h.n_lit);
+    decompress_vect(dist_ptr, h.bytes_dist,
+                    reinterpret_cast<std::byte*>(dist.data()), h.n_dist);
+    decompress_vect(len_ptr, h.bytes_len, reinterpret_cast<std::byte*>(len.data()),
+                    h.n_len);
 
-    bit_reader<decltype(extra_dist.begin())> reader{extra_dist.begin()};
-
-    std::vector<token> tokens;
-    tokens.reserve(h.n_control);
+    bit_reader reader(extra_ptr);
 
     streams res;
     res.distances.resize(h.n_len);
-    size_t dist_i = 0;
 
-    size_t lit_idx = 0;
-    size_t dist_idx = 0;
-    size_t len_idx = 0;
-
+    size_t   dist_i = 0;
+    size_t   lit_idx = 0;
+    size_t   dist_idx = 0;
+    size_t   len_idx = 0;
     uint32_t dist_cache[3] = {0, 0, 0};
 
+    uint32_t        d, d_ctx, d_val;
+    dist_bins::info dbins;
     for (size_t i = 0; i < h.n_control; ++i) {
-        if (control[i] != std::byte{0}) {
-            uint32_t d;
-            if (control[i] == std::byte{1}) {
-                d = dist_cache[0];
-            } else if (control[i] == std::byte{2}) {
-                d = dist_cache[1];
-            } else if (control[i] == std::byte{3}) {
-                d = dist_cache[2];
-            } else {
-                uint32_t d_ctx = static_cast<uint32_t>(dist[dist_idx++]);
-                auto     dbins = dist_bins::get_from_ctx(d_ctx);
-                uint32_t d_val = reader.read(dbins.extra_bits);
-                d = dbins.base + d_val;
-            }
-
+        switch (static_cast<int>(control[i])) {
+        case 1:
+            d = dist_cache[0];
             dist_cache[2] = dist_cache[1];
             dist_cache[1] = dist_cache[0];
             dist_cache[0] = d;
-
             res.distances[dist_i++] = d;
+            break;
+        case 2:
+            d = dist_cache[1];
+            dist_cache[2] = dist_cache[1];
+            dist_cache[1] = dist_cache[0];
+            dist_cache[0] = d;
+            res.distances[dist_i++] = d;
+            break;
+        case 3:
+            d = dist_cache[2];
+            dist_cache[2] = dist_cache[1];
+            dist_cache[1] = dist_cache[0];
+            dist_cache[0] = d;
+            res.distances[dist_i++] = d;
+            break;
+        default:
+            d_ctx = static_cast<uint32_t>(dist[dist_idx++]);
+            dbins = dist_bins::get_from_ctx(d_ctx);
+            d_val = reader.read(dbins.extra_bits);
+            d = dbins.base + d_val;
+            dist_cache[2] = dist_cache[1];
+            dist_cache[1] = dist_cache[0];
+            dist_cache[0] = d;
+            res.distances[dist_i++] = d;
+        case 0:
+            break;
         }
     }
 

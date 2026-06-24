@@ -81,48 +81,43 @@ static inline void compress(const std::vector<B>   &src,
     }
 }
 
-template <typename B>
-static inline void decompress(const std::vector<std::byte> &src,
-                              std::vector<B>               &dest) {
-    if (src.empty()) {
-        dest.clear();
+static inline void decompress(const std::byte *from, uint32_t bytes, std::byte *to) {
+    if (bytes == 0) {
         return;
     }
 
-    std::byte is_copy = src[0];
+    std::byte is_copy = from[0];
     if (is_copy == YES_COPY) {
-        dest.resize((src.size() - 1) / sizeof(B));
-        std::memcpy(dest.data(), src.data() + 1, src.size() - 1);
+        std::memcpy(to, from + 1, bytes - 1);
         return;
     }
 
     size_t header_size = 1 + sizeof(uint64_t);
-    if (src.size() < header_size) {
+    if (bytes < header_size) {
         throw std::runtime_error("Decompression failed: source too small");
     }
 
     uint64_t original_bytes;
-    std::memcpy(&original_bytes, src.data() + 1, sizeof(uint64_t));
+    std::memcpy(&original_bytes, from + 1, sizeof(uint64_t));
 
-    dest.resize(original_bytes / sizeof(B));
-    uint8_t *dest_ptr = reinterpret_cast<uint8_t *>(dest.data());
+    uint8_t *dest_ptr = reinterpret_cast<uint8_t *>(to);
 
     size_t src_offset = header_size;
     size_t dest_offset = 0;
 
     while (dest_offset < original_bytes) {
-        if (src_offset + sizeof(uint32_t) > src.size()) {
+        if (src_offset + sizeof(uint32_t) > bytes) {
             throw std::runtime_error("Decompression failed: truncated block header");
         }
 
         uint32_t block_header;
-        std::memcpy(&block_header, src.data() + src_offset, sizeof(uint32_t));
+        std::memcpy(&block_header, from + src_offset, sizeof(uint32_t));
         src_offset += sizeof(uint32_t);
 
         bool     is_raw = (block_header & RAW_BLOCK_FLAG) != 0;
         uint32_t payload_size = block_header & ~RAW_BLOCK_FLAG;
 
-        if (src_offset + payload_size > src.size()) {
+        if (src_offset + payload_size > bytes) {
             throw std::runtime_error(
                 "Decompression failed: truncated block payload");
         }
@@ -135,12 +130,11 @@ static inline void decompress(const std::vector<std::byte> &src,
                 throw std::runtime_error(
                     "Decompression failed: raw block size mismatch");
             }
-            std::memcpy(dest_ptr + dest_offset, src.data() + src_offset,
-                        payload_size);
+            std::memcpy(dest_ptr + dest_offset, from + src_offset, payload_size);
         } else {
             size_t count =
                 HUF_decompress(dest_ptr + dest_offset, chunk_expected_size,
-                               src.data() + src_offset, payload_size);
+                               from + src_offset, payload_size);
 
             if (HUF_isError(count)) {
                 throw std::runtime_error(std::format("Decompression failed: {}",

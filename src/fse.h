@@ -49,32 +49,25 @@ static inline void compress(const std::vector<B>   &src,
     }
 }
 
-template <typename B>
-static inline void decompress(const std::vector<std::byte> &src,
-                              std::vector<B>               &dest) {
-    if (src.empty()) {
-        dest.clear();
+static inline void decompress(const std::byte *from, uint32_t bytes, std::byte *to) {
+    if (bytes == 0) {
         return;
     }
 
-    std::byte is_copy = src[0];
+    std::byte is_copy = from[0];
     if (is_copy == YES_COPY) {
-        dest.resize((src.size() - 1) / sizeof(B));
-        std::memcpy(dest.data(), src.data() + 1, src.size() - 1);
+        std::memcpy(to, from + 1, bytes - 1);
     } else {
         size_t header_size = 1 + sizeof(uint64_t);
-        if (src.size() < header_size) {
+        if (bytes < header_size) {
             throw std::runtime_error("Decompression failed: source too small");
         }
 
         uint64_t original_bytes;
-        std::memcpy(&original_bytes, src.data() + 1, sizeof(uint64_t));
+        std::memcpy(&original_bytes, from + 1, sizeof(uint64_t));
 
-        dest.resize(original_bytes / sizeof(B));
-
-        size_t count =
-            FSE_decompress(dest.data(), original_bytes, src.data() + header_size,
-                           src.size() - header_size);
+        size_t count = FSE_decompress(to, original_bytes, from + header_size,
+                                      bytes - header_size);
 
         if (FSE_isError(count)) {
             throw std::runtime_error(

@@ -94,32 +94,41 @@ static void encode(auto &in, auto &out, auto print_total_tokens, auto &pp) {
     }
 }
 
-static void decode(auto &in, std::string filename, auto &pp) {
+static void decode(const std::string &filename_in, const std::string &filename_out,
+                   auto &pp) {
     decoder decoder;
 
-    unsigned char mark;
-    if (!in.get(reinterpret_cast<char &>(mark))) {
-        throw std::runtime_error("Failed to read the input file");
+    int in = open(filename_in.c_str(), O_RDONLY);
+    if (in == -1) {
+        throw std::runtime_error("Failed to open the input file");
     }
-    auto format = formats::format::get_for_mark(mark);
-    auto [orig_size, streams] = format.read_block(in);
+    auto in_size = std::filesystem::file_size(filename_in);
 
-    int fd = open(filename.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-    if (fd == -1 || ftruncate(fd, orig_size + 256) == -1) {
+    std::byte *ptr_in = static_cast<std::byte *>(
+        mmap(nullptr, in_size, PROT_READ, MAP_PRIVATE, in, 0));
+
+    unsigned char mark = static_cast<unsigned char>(*ptr_in);
+    auto          format = formats::format::get_for_mark(mark);
+    auto [orig_size, streams] = format.read_block(ptr_in + 1);
+
+    int out = open(filename_out.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+    if (out == -1 || ftruncate(out, orig_size + 256) == -1) {
         throw std::runtime_error("Failed to open the output file");
     }
 
-    std::byte *ptr = static_cast<std::byte *>(
-        mmap(nullptr, orig_size + 256, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
+    std::byte *ptr_out = static_cast<std::byte *>(
+        mmap(nullptr, orig_size + 256, PROT_READ | PROT_WRITE, MAP_SHARED, out, 0));
 
-    decoder.decode(orig_size, ptr, streams);
+    decoder.decode(orig_size, ptr_out, streams);
 
-    munmap(ptr, orig_size);
+    munmap(ptr_out, orig_size);
+    munmap(ptr_in, in_size);
 
-    if (ftruncate(fd, orig_size) == -1) {
+    if (ftruncate(out, orig_size) == -1) {
         throw std::runtime_error("Failed to shrink the output file");
     }
-    close(fd);
+    close(out);
+    close(in);
 
     config::finish();
     pp.join();
@@ -293,7 +302,8 @@ int main(int argc, char **argv) {
     } else if (run_decoder) {
         auto printer = std::jthread{config::report_progress};
         out.close();
-        decode(in, output_file, printer);
+        in.close();
+        decode(input_file, output_file, printer);
     }
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed_time = end_time - start_time;
