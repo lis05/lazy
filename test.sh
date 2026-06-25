@@ -57,7 +57,7 @@ echo "Decoding (Pinned to core ${DECODE_CORE}, forced single-thread)..."
 exec 4>&1
 
 # Suppress raw output while collecting structural metrics
-dec_err=$({ env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 taskset -c "${DECODE_CORE}" perf stat -x, -e duration_time /usr/bin/time -f "BENCHMARK: %M" "$compressor" -d -i "$encoded_tmp" -o "$decoded_tmp"; } 2>&1 1>&4)
+dec_err=$({ env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 taskset -c "${DECODE_CORE}" perf stat -x, -e duration_time /usr/bin/time -f "BENCHMARK: %M" "$compressor" -d -i "$encoded_tmp" -o "$decoded_tmp" "$@"; } 2>&1 1>&4)
 dec_status=$?
 exec 4>&-
 
@@ -72,7 +72,7 @@ if [ $dec_status -ne 0 ]; then
     echo "$dec_err" | grep -v "BENCHMARK:"
     echo "---------------------"
     echo "To debug this failure, run:"
-    echo "$compressor -e -i $to_encode -o $encoded_tmp -t $* && taskset -c ${DECODE_CORE} gdb --args $compressor -d -i $encoded_tmp -o $decoded_tmp"
+    echo "$compressor -e -i $to_encode -o $encoded_tmp -t $* && taskset -c ${DECODE_CORE} gdb --args $compressor -d -i $encoded_tmp -o $decoded_tmp $*"
     exit 1
 fi
 

@@ -138,8 +138,8 @@ static void decompress_vect(const std::byte* from, uint32_t bytes, std::byte* to
     from++;
 
     if (flag == std::byte{0}) {
-        ::turborc::decompress<::turborc::rcmrrssdec, PRM0, PRM1>(from, bytes - 1,
-                                                                 to, to_size);
+        ::turborc::decompress<::turborc::rcmrrssdec, PRM0, PRM1>(from, bytes - 1, to,
+                                                                 to_size);
     } else if (flag == std::byte{1}) {
         ::turborc::decompress<::turborc::anscdf1dec>(from, bytes - 1, to, to_size);
     } else if (flag == std::byte{2}) {
@@ -249,6 +249,9 @@ std::pair<uint64_t, streams> read_block(const std::byte* ptr) {
     auto dist = static_cast<std::byte*>(std::malloc(h.n_dist * sizeof(std::byte)));
     auto len = static_cast<uint8_t*>(std::malloc(h.n_len * sizeof(uint8_t)));
 
+    streams res;
+    res.distances = static_cast<uint32_t*>(std::malloc(h.n_len * sizeof(uint32_t)));
+
     decompress_vect(control_ptr, h.bytes_control,
                     reinterpret_cast<std::byte*>(control), h.n_control);
     decompress_vect(lit_ptr, h.bytes_lit, reinterpret_cast<std::byte*>(lit),
@@ -259,9 +262,6 @@ std::pair<uint64_t, streams> read_block(const std::byte* ptr) {
                     h.n_len);
 
     bit_reader reader(extra_ptr);
-
-    streams res;
-    res.distances = static_cast<uint32_t*>(std::malloc(h.n_len * sizeof(uint32_t)));
 
     size_t   dist_i = 0;
     size_t   lit_idx = 0;
@@ -307,6 +307,48 @@ std::pair<uint64_t, streams> read_block(const std::byte* ptr) {
         case 0:
             break;
         }
+    }
+
+    if (config::metrics) {
+        uint32_t controls_cnt[5] = {0};
+        for (size_t i = 0; i < h.n_control; i++) {
+            controls_cnt[static_cast<int>(control[i])]++;
+        }
+
+        uint32_t dist_below_32 = 0;
+        for (size_t i = 0; i < h.n_dist; i++) {
+            dist_below_32 += res.distances[i] < 32;
+        }
+
+        auto fmt = [](auto num) {
+            if (num < 1000) {
+                return std::format("{}", num);
+            } else if (num <= 1000000) {
+                return std::format("{:.1f}K", 1.0 * num / 1000);
+            } else if (num <= 1000000000) {
+                return std::format("{:.1f}M", 1.0 * num / 1000000);
+            } else {
+                return std::format("{:.1f}G", 1.0 * num / 1000000000);
+            }
+        };
+
+        config::print_message("=============================\n");
+        config::print_message(std::format(
+            "controls:  {} ({}, {}, {}, {}, {}), {} bytes\n", fmt(h.n_control),
+            fmt(controls_cnt[0]), fmt(controls_cnt[1]), fmt(controls_cnt[2]),
+            fmt(controls_cnt[3]), fmt(controls_cnt[4]), fmt(h.bytes_control)));
+        config::print_message(std::format("literals:  {}, {} bytes\n", fmt(h.n_lit),
+                                          fmt(h.bytes_lit)));
+        config::print_message(std::format("distances: {}, {} bytes\n", fmt(h.n_dist),
+                                          fmt(h.bytes_dist)));
+        config::print_message(std::format("lengths:   {}, {} bytes\n", fmt(h.n_dist),
+                                          fmt(h.bytes_len)));
+        config::print_message(std::format("extra:     {}, {} bytes\n", fmt(h.n_dist),
+                                          fmt(h.bytes_extra_dist)));
+        config::print_message(std::format("dist < 32: {} ({:.1f}%)\n",
+                                          fmt(dist_below_32),
+                                          100.0 * dist_below_32 / h.n_dist));
+        config::print_message("=============================\n");
     }
 
     res.n_controls = h.n_control;

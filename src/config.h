@@ -30,6 +30,7 @@ public:
     static bool                  use_memcpy;
     static bool                  use_rans_static0;
     static bool                  use_rans_static1;
+    static bool                  metrics;
 
     static bool stats;
 

@@ -35,6 +35,7 @@ bool                  config::use_memcpy = false;
 bool                  config::use_rans_static0 = false;
 bool                  config::use_rans_static1 = false;
 bool                  config::level[15] = {};
+bool                  config::metrics = false;
 
 bool config::stats = false;
 

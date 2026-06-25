@@ -251,14 +251,15 @@ int main(int argc, char **argv) {
     bool measure_time = false;
     bool print_total_tokens = false;
     bool print_config = false;
-    misc_group->add_flag("-m", measure_time, "Measure execution time");
+    misc_group->add_flag("-M", measure_time, "Measure execution time");
 
     misc_group->add_flag("-t", print_total_tokens,
                          "Print total tokens produced (if encoding)");
     misc_group->add_flag("-p", config::print_progress, "Print progress");
     misc_group->add_flag("-c", print_config, "Print config and exit");
-    misc_group->add_flag("-s", config::stats,
+    misc_group->add_flag("--stats", config::stats,
                          "Calculate various statistics and write them to ./stats/");
+    misc_group->add_flag("-m", config::metrics, "Prints compression metrics");
     misc_group->add_option(
         "--lhc", config::load_hashchains,
         "Load & sync hashchains to file. Can speed up on subsequent runs");
