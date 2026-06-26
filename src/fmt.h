@@ -18,7 +18,7 @@ struct header {
     uint32_t bytes_len;
     uint32_t bytes_extra_dist;
 
-    friend std::ostream&    operator<<(std::ostream& out, const header& h);
+    static const std::byte* write(const header& h, std::byte* ptr);
     static const std::byte* read(header& h, const std::byte* ptr);
 };
 
@@ -30,8 +30,7 @@ struct streams {
     uint8_t*   lengths;
 };
 
-void verify_config();
-void write_format_mark(std::ostream& out);
-void write_block(const std::vector<token>& tokens, std::ostream& out);
+std::byte* write_format_mark(std::byte* ptr);
+std::byte* write_block(const std::vector<token>& tokens, std::byte* ptr);
 std::pair<uint64_t, streams> read_block(const std::byte* ptr);
 }  // namespace formats::main

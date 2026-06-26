@@ -14,76 +14,51 @@
 
 namespace formats::main {
 
-std::ostream& operator<<(std::ostream& out, const header& h) {
-    out.write(reinterpret_cast<const char*>(&h.orig_bytes), sizeof(h.orig_bytes));
-    out.write(reinterpret_cast<const char*>(&h.n_control), sizeof(h.n_control));
-    out.write(reinterpret_cast<const char*>(&h.n_lit), sizeof(h.n_lit));
-    out.write(reinterpret_cast<const char*>(&h.n_dist), sizeof(h.n_dist));
-    out.write(reinterpret_cast<const char*>(&h.n_len), sizeof(h.n_len));
-    out.write(reinterpret_cast<const char*>(&h.bytes_control),
-              sizeof(h.bytes_control));
-    out.write(reinterpret_cast<const char*>(&h.bytes_lit), sizeof(h.bytes_lit));
-    out.write(reinterpret_cast<const char*>(&h.bytes_dist), sizeof(h.bytes_dist));
-    out.write(reinterpret_cast<const char*>(&h.bytes_len), sizeof(h.bytes_len));
-    out.write(reinterpret_cast<const char*>(&h.bytes_extra_dist),
-              sizeof(h.bytes_extra_dist));
-    return out;
+template <typename T>
+static void write_field(std::byte*& ptr, const T& value) {
+    std::memcpy(ptr, &value, sizeof(T));
+    ptr += sizeof(T);
+}
+
+template <typename T>
+static void read_field(const std::byte*& ptr, T& value) {
+    std::memcpy(&value, ptr, sizeof(T));
+    ptr += sizeof(T);
+}
+
+std::byte* header::write(const header& h, std::byte* ptr) {
+    write_field(ptr, h.orig_bytes);
+    write_field(ptr, h.n_control);
+    write_field(ptr, h.n_lit);
+    write_field(ptr, h.n_dist);
+    write_field(ptr, h.n_len);
+    write_field(ptr, h.bytes_control);
+    write_field(ptr, h.bytes_lit);
+    write_field(ptr, h.bytes_dist);
+    write_field(ptr, h.bytes_len);
+    write_field(ptr, h.bytes_extra_dist);
+
+    return ptr;
 }
 
 const std::byte* header::read(header& h, const std::byte* ptr) {
-    std::memcpy(&h.orig_bytes, ptr, sizeof(h.orig_bytes));
-    ptr += sizeof(h.orig_bytes);
-    std::memcpy(&h.n_control, ptr, sizeof(h.n_control));
-    ptr += sizeof(h.n_control);
-    std::memcpy(&h.n_lit, ptr, sizeof(h.n_lit));
-    ptr += sizeof(h.n_lit);
-    std::memcpy(&h.n_dist, ptr, sizeof(h.n_dist));
-    ptr += sizeof(h.n_dist);
-    std::memcpy(&h.n_len, ptr, sizeof(h.n_len));
-    ptr += sizeof(h.n_len);
-    std::memcpy(&h.bytes_control, ptr, sizeof(h.bytes_control));
-    ptr += sizeof(h.bytes_control);
-    std::memcpy(&h.bytes_lit, ptr, sizeof(h.bytes_lit));
-    ptr += sizeof(h.bytes_lit);
-    std::memcpy(&h.bytes_dist, ptr, sizeof(h.bytes_dist));
-    ptr += sizeof(h.bytes_dist);
-    std::memcpy(&h.bytes_len, ptr, sizeof(h.bytes_len));
-    ptr += sizeof(h.bytes_len);
-    std::memcpy(&h.bytes_extra_dist, ptr, sizeof(h.bytes_extra_dist));
-    ptr += sizeof(h.bytes_extra_dist);
+    read_field(ptr, h.orig_bytes);
+    read_field(ptr, h.n_control);
+    read_field(ptr, h.n_lit);
+    read_field(ptr, h.n_dist);
+    read_field(ptr, h.n_len);
+    read_field(ptr, h.bytes_control);
+    read_field(ptr, h.bytes_lit);
+    read_field(ptr, h.bytes_dist);
+    read_field(ptr, h.bytes_len);
+    read_field(ptr, h.bytes_extra_dist);
+
     return ptr;
 }
-void verify_config() {
-    if (config::block_size == 0) {
-        throw std::runtime_error("Invalid block size: 0");
-    }
 
-    if (config::window_size == 0) {
-        throw std::runtime_error("Invalid window size: 0");
-    }
-
-    if (config::window_size < 64) {
-        throw std::runtime_error(std::format(
-            "Invalid window size: {}. Must be at least 64", config::window_size));
-    }
-
-    if (config::window_size > dist_bins::MAX_VAL()) {
-        throw std::runtime_error(
-            std::format("Invalid window size {}. Must be at most {}",
-                        config::window_size, dist_bins::MAX_VAL()));
-    }
-
-    if (config::future_limit == 0) {
-        throw std::runtime_error("Invalid future limit: 0");
-    }
-
-    if (config::future_limit > 256) {
-        throw std::runtime_error("Invalid future limit: must be at most 256");
-    }
-}
-
-void write_format_mark(std::ostream& out) {
-    out << formats::MAIN;
+std::byte* write_format_mark(std::byte* ptr) {
+    *ptr = MAIN;
+    return ++ptr;
 }
 
 static constexpr int PRM0 = 4;
@@ -157,8 +132,9 @@ static void decompress_vect(const std::byte* from, uint32_t bytes, std::byte* to
     }
 }
 
-void write_block(const std::vector<token>& tokens, std::ostream& out) {
-    config::print_message("Encoding tokens (may take a while)\n");
+std::byte* write_block(const std::vector<token>& tokens, std::byte* ptr) {
+    // todo: replace vectors with mallocated memory
+    config::start_action("Encoding tokens");
     std::vector<std::byte> control;
     std::vector<std::byte> lit;
     std::vector<std::byte> dist;
@@ -224,16 +200,22 @@ void write_block(const std::vector<token>& tokens, std::ostream& out) {
     header.bytes_len = out_len.size();
     header.bytes_extra_dist = extra_dist.size();
 
-    out << header;
-    out.write(reinterpret_cast<const char*>(out_control.data()), out_control.size());
-    out.write(reinterpret_cast<const char*>(out_lit.data()), out_lit.size());
-    out.write(reinterpret_cast<const char*>(out_dist.data()), out_dist.size());
-    out.write(reinterpret_cast<const char*>(out_len.data()), out_len.size());
-    out.write(reinterpret_cast<const char*>(extra_dist.data()), extra_dist.size());
+    ptr = header::write(h, ptr);
+    std::memcpy(ptr, out_control.data(), out_control.size());
+    ptr += out_control.size();
+    std::memcpy(ptr, out_lit.data(), out_lit.size());
+    ptr += out_lit.size();
+    std::memcpy(ptr, out_dist.data(), out_dist.size());
+    ptr += out_dist.size();
+    std::memcpy(ptr, out_len.data(), out_len.size());
+    ptr += out_len.size();
+    std::memcpy(ptr, extra_dist.data(), extra_dist.size());
+    ptr += extra_dist.size();
+    return ptr;
 }
 
 std::pair<uint64_t, streams> read_block(const std::byte* ptr) {
-    config::print_message("Decoding tokens (may take a while)\n");
+    config::start_action("Decoding tokens");
     header h;
     ptr = header::read(h, ptr);
 
@@ -332,23 +314,22 @@ std::pair<uint64_t, streams> read_block(const std::byte* ptr) {
             }
         };
 
-        config::print_message("=============================\n");
-        config::print_message(std::format(
+        std::cerr << "=============================\n";
+        std::cerr << std::format(
             "controls:  {} ({}, {}, {}, {}, {}), {} bytes\n", fmt(h.n_control),
             fmt(controls_cnt[0]), fmt(controls_cnt[1]), fmt(controls_cnt[2]),
-            fmt(controls_cnt[3]), fmt(controls_cnt[4]), fmt(h.bytes_control)));
-        config::print_message(std::format("literals:  {}, {} bytes\n", fmt(h.n_lit),
-                                          fmt(h.bytes_lit)));
-        config::print_message(std::format("distances: {}, {} bytes\n", fmt(h.n_dist),
-                                          fmt(h.bytes_dist)));
-        config::print_message(std::format("lengths:   {}, {} bytes\n", fmt(h.n_dist),
-                                          fmt(h.bytes_len)));
-        config::print_message(std::format("extra:     {}, {} bytes\n", fmt(h.n_dist),
-                                          fmt(h.bytes_extra_dist)));
-        config::print_message(std::format("dist < 32: {} ({:.1f}%)\n",
-                                          fmt(dist_below_32),
-                                          100.0 * dist_below_32 / h.n_dist));
-        config::print_message("=============================\n");
+            fmt(controls_cnt[3]), fmt(controls_cnt[4]), fmt(h.bytes_control));
+        std::cerr << std::format("literals:  {}, {} bytes\n", fmt(h.n_lit),
+                                 fmt(h.bytes_lit));
+        std::cerr << std::format("distances: {}, {} bytes\n", fmt(h.n_dist),
+                                 fmt(h.bytes_dist));
+        std::cerr << std::format("lengths:   {}, {} bytes\n", fmt(h.n_dist),
+                                 fmt(h.bytes_len));
+        std::cerr << std::format("extra:     {}, {} bytes\n", fmt(h.n_dist),
+                                 fmt(h.bytes_extra_dist));
+        std::cerr << std::format("dist < 32: {} ({:.1f}%)\n", fmt(dist_below_32),
+                                 100.0 * dist_below_32 / h.n_dist);
+        std::cerr << "=============================\n";
     }
 
     res.n_controls = h.n_control;

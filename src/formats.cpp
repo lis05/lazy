@@ -5,8 +5,7 @@
 
 namespace formats {
 format format::get_main() {
-    return format{main::write_format_mark, main::write_block, main::read_block,
-                  main::verify_config};
+    return format{main::write_format_mark, main::write_block, main::read_block};
 }
 
 format format::get_for_mark(uint8_t mark) {

@@ -18,6 +18,8 @@ struct state {
         dist_cache[1] = dist1;
         dist_cache[2] = dist2;
     }
+    state() : state(0, 0, 0) {
+    }
 };
 
 struct smart {

@@ -10,68 +10,53 @@
 #include <mutex>
 #include <thread>
 
-size_t                config::block_size = 1 << 20;
-size_t                config::window_size = 1 << 16;
-size_t                config::future_limit = 1 << 12;
-uint64_t              config::max_matches = 0;
-size_t                config::jobs = 1;
-size_t                config::blocks = 1;
-bool                  config::print_progress = false;
-size_t                config::divisions = 1;
-std::vector<uint32_t> config::prefix_lengths{};
-size_t                config::hash_bits = 0;
-bool                  config::finished = false;
-std::atomic_uint64_t  config::processed_bytes;
-uint64_t              config::total_bytes;
-std::string           config::load_hashchains = "";
-std::string           config::load_tokens = "";
+std::vector<uint32_t> config::max_matches{20};
+std::vector<uint32_t> config::prefix_lengths{5};
+uint32_t              config::divisions = 1;
+uint32_t              config::hash_bits = 0;
 uint32_t              config::passes = 1;
-std::string           config::format = "main";
-bool                  config::use_turborc = false;
-bool                  config::use_turboans = false;
-bool                  config::use_fse = false;
-bool                  config::use_huf = false;
-bool                  config::use_memcpy = false;
-bool                  config::use_rans_static0 = false;
-bool                  config::use_rans_static1 = false;
-bool                  config::level[15] = {};
-bool                  config::metrics = false;
+uint32_t              config::threads = 1;
 
-bool config::stats = false;
+std::string config::load_hashchains = "";
+std::string config::load_tokens = "";
 
-void config::print() {
+std::string config::format = "main";
+bool        config::use_turborc = false;
+bool        config::use_turboans = false;
+bool        config::use_fse = false;
+bool        config::use_huf = false;
+bool        config::use_memcpy = false;
+bool        config::use_rans_static0 = false;
+bool        config::use_rans_static1 = false;
+
+bool     config::stats = false;
+bool     config::metrics = false;
+uint32_t config::verbosity = 0;
+
+bool config::level[15] = {};
+
+void config::print_config() {
     int l = 0;
     for (int i = 0; i < sizeof(config::level) / sizeof(config::level[0]); i++) {
         if (level[i])
             l = i;
     }
-    std::cout << std::format(
-                     "block_size: {}\n"
-                     "window_size: {}\n"
-                     "future_limit: {}\n"
-                     "max_matches: {}\n"
-                     "jobs: {}\n"
-                     "blocks: {}\n"
-                     "print_progress: {}\n"
-                     "divisions: {}\n"
-                     "prefix_lengths: {}\n"
-                     "hash_bits: {}\n"
-                     "finished: {}\n"
-                     "processed_bytes: {}\n"
-                     "total_bytes: {}\n"
-                     "format: {}\n"
-                     "level: {}\n"
-                     "stats: {}",
-                     config::block_size, config::window_size, config::future_limit,
-                     config::max_matches, config::jobs, config::blocks,
-                     config::print_progress, config::divisions,
-                     config::prefix_lengths, config::hash_bits, config::finished,
-                     config::processed_bytes.load(), config::total_bytes,
-                     config::format, l, config::stats)
-              << std::endl;
+    std::cout << std::format("TODO") << std::endl;
 }
 
-static auto get_mb() {
+static auto fmt(auto num) {
+    if (num < 1000) {
+        return std::format("{}", num);
+    } else if (num <= 1000000) {
+        return std::format("{:.1f}K", 1.0 * num / 1000);
+    } else if (num <= 1000000000) {
+        return std::format("{:.1f}M", 1.0 * num / 1000000);
+    } else {
+        return std::format("{:.1f}G", 1.0 * num / 1000000000);
+    }
+};
+
+static auto get_memory_usage() {
     std::ifstream stream("/proc/self/status");
     std::string   line;
     while (std::getline(stream, line)) {
@@ -79,206 +64,92 @@ static auto get_mb() {
             size_t idx = line.find_first_of("0123456789");
             if (idx != std::string::npos) {
                 unsigned long long vm_peak_kb = std::stoull(line.substr(idx));
-                return vm_peak_kb / 1024;
+                return vm_peak_kb * 1024;
             }
         }
     }
     return 0ULL;
 }
 
-static std::mutex mtx;
-void              config::print_message(const std::string &message) {
+using s_clock = std::chrono::system_clock;
+static std::mutex  mtx;
+static std::string current_action = "";
+static bool        current_action_has_counter = false;
+static uint32_t    current_pass = 0;
+
+void config::set_pass(uint32_t pass) {
     std::lock_guard<std::mutex> lock(mtx);
-    static auto                 start_time = std::chrono::system_clock::now();
-    static auto                 last_message_time = start_time;
-    auto                        now = std::chrono::system_clock::now();
-
-    auto elapsed =
-        std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
-    auto active_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           now - last_message_time)
-                           .count();
-
-    last_message_time = now;
-
-    std::string suffix = std::format(" (^ {}ms)", active_time);
-    std::string out_msg = message;
-
-    if (!out_msg.empty() && out_msg.back() == '\n') {
-        out_msg.insert(out_msg.size() - 1, suffix);
-    } else {
-        out_msg += suffix;
-    }
-
-    if (!message.empty() && message[0] != '\r') {
-        std::cout << "\r\33[2K" << "[" << elapsed << "s] " << out_msg << std::flush;
-    } else {
-        std::cout << out_msg << std::flush;
-    }
+    current_pass = pass;
 }
 
-static std::mutex              finish_mtx;
+void config::start_action(const std::string &name) {
+    std::lock_guard<std::mutex> lock(mtx);
+    current_action = name;
+    current_action_has_counter = false;
+}
+
+void config::start_action_with_counter(const std::string &name) {
+    std::lock_guard<std::mutex> lock(mtx);
+    current_action = name;
+    current_action_has_counter = true;
+}
+
 static std::condition_variable finish_cv;
+static bool                    finished = false;
 void                           config::finish() {
     {
-        std::lock_guard<std::mutex> lock(finish_mtx);
-        config::finished = true;
+        std::lock_guard<std::mutex> lock(mtx);
+        finished = true;
     }
     finish_cv.notify_one();
 }
 
 void config::report_progress() {
-    if (!print_progress)
+    if (config::verbosity == 0) {
         return;
+    }
 
-    auto     start_time = std::chrono::system_clock::now();
-    uint64_t last_processed = processed_bytes.load();
+    using namespace std::chrono_literals;
+    decltype(1ms) sleep_interval;
+    if (config::verbosity == 1) {
+        sleep_interval = 2000ms;
+    } else if (config::verbosity == 2) {
+        sleep_interval = 500ms;
+    } else {
+        sleep_interval = 200ms;
+    }
 
-    auto format_size = [](uint64_t bytes) -> std::string {
-        if (bytes >= 1024 * 1024 * 1024)
-            return std::format("{:.2f} GB",
-                               static_cast<double>(bytes) / (1024 * 1024 * 1024));
-        if (bytes >= 1024 * 1024)
-            return std::format("{:.2f} MB",
-                               static_cast<double>(bytes) / (1024 * 1024));
-        if (bytes >= 1024)
-            return std::format("{:.2f} KB", static_cast<double>(bytes) / 1024);
-        return std::format("{} B", bytes);
-    };
+    static auto start = s_clock::now();
 
     do {
-        using namespace std::chrono_literals;
-        auto interval_start_time = std::chrono::system_clock::now();
-
-        std::unique_lock<std::mutex> lock(finish_mtx);
-        if (finish_cv.wait_for(lock, 1000ms, [] { return finished; })) {
+        std::unique_lock<std::mutex> lock(mtx);
+        if (finish_cv.wait_for(lock, sleep_interval, [] { return finished; })) {
             break;
         }
         lock.unlock();
 
-        auto now = std::chrono::system_clock::now();
-
+        auto now = s_clock::now();
         auto elapsed =
-            std::chrono::duration_cast<std::chrono::seconds>(now - start_time)
-                .count();
-        double interval_seconds =
-            std::chrono::duration<double>(now - interval_start_time).count();
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - start);
 
-        auto     current_processed = processed_bytes.load();
-        uint64_t interval_bytes = (current_processed >= last_processed)
-                                      ? (current_processed - last_processed)
-                                      : 0;
-        last_processed = current_processed;
+        std::chrono::hh_mm_ss elapsed_split{elapsed};
 
-        double current_rate =
-            (interval_seconds > 0)
-                ? (static_cast<double>(interval_bytes) / interval_seconds)
-                : 0.0;
-        double mb_s = current_rate / (1024.0 * 1024.0);
+        constexpr const char *CLEAR = "\r\33[2K";
 
-        auto remaining_bytes = (total_bytes > current_processed)
-                                   ? (total_bytes - current_processed)
-                                   : 0;
-        auto eta = (current_rate > 0)
-                       ? static_cast<int64_t>(remaining_bytes / current_rate)
-                       : 0;
-        auto total_estimated = elapsed + eta;
+#define TIME_FMT
 
-        double percentage =
-            (total_bytes > 0) ? (100.0 * current_processed / total_bytes) : 0.0;
-
-        config::print_message(std::format(
-            "\r[{}s] {:.1f}% ({} / {}, {:.2f} MB/s, "
-            "Elapsed: {}s, Total: {}s, MEM: {}MB)",
-            elapsed, percentage, format_size(current_processed),
-            format_size(total_bytes), mb_s, elapsed, total_estimated, get_mb()));
-
+        std::cout << CLEAR;
+        if (!current_action_has_counter) {
+            std::cout << std::format("[{} / {}, {:%H:%M:%S}] {}", current_pass + 1,
+                                     config::passes, elapsed_split, current_action);
+        } else {
+            std::cout << std::format("[{} / {}, {:%H:%M:%S}] {} {:.2f}% ({} / {})",
+                                     current_pass + 1, config::passes, elapsed_split,
+                                     current_action,
+                                     100.0 * counter.load() / max_counter,
+                                     fmt(counter.load()), fmt(max_counter));
+        }
+        std::cout << "\n";
     } while (!finished);
-
-    config::print_message("\r\33[2KProgress complete.\n");
-}
-
-void config::apply_level(size_t file_size) {
-    auto cores = static_cast<size_t>(std::thread::hardware_concurrency());
-
-    if (level[0]) {
-        block_size = file_size;
-        window_size = file_size;
-        future_limit = 256;
-        max_matches = 20;
-        divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5};
-        return;
-    };
-
-    if (level[1]) {
-        block_size = file_size;
-        window_size = file_size;
-        future_limit = 256;
-        max_matches = 200;
-        divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5};
-        return;
-    };
-
-    if (level[2]) {
-        block_size = file_size;
-        window_size = file_size;
-        future_limit = 256;
-        max_matches = 20;
-        divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5, 6, 8};
-        return;
-    };
-
-    if (level[3]) {
-        block_size = file_size;
-        window_size = file_size;
-        future_limit = 256;
-        max_matches = 200;
-        divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5, 6, 8};
-        return;
-    };
-
-    if (level[4]) {
-        block_size = file_size;
-        window_size = file_size;
-        future_limit = 256;
-        max_matches = 20;
-        divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5, 6, 8, 12, 16, 20, 24};
-        return;
-    };
-
-    if (level[5]) {
-        block_size = file_size;
-        window_size = file_size;
-        future_limit = 256;
-        max_matches = 200;
-        divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5, 6, 8, 12, 16, 20, 24};
-        return;
-    };
-
-    if (level[6]) {
-        block_size = file_size;
-        window_size = file_size;
-        future_limit = 256;
-        max_matches = 2000;
-        divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5, 6, 8, 12, 16, 20, 24};
-        return;
-    };
-
-    if (level[7]) {
-        block_size = file_size;
-        window_size = file_size;
-        future_limit = 256;
-        max_matches = 6000;
-        divisions = cores;
-        prefix_lengths = std::vector<uint32_t>{5, 6, 8, 12, 16, 20, 24, 28, 32};
-        return;
-    };
 }
 

@@ -5,7 +5,7 @@
 
 void decoder::decode(size_t orig_size, std::byte* data,
                      const formats::main::streams& s) {
-    config::print_message("Restoring original file\n");
+    config::start_action("Restoring original file...");
     auto sz = s.n_controls;
 
     const auto data_base = data;

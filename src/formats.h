@@ -15,16 +15,15 @@ enum marks : unsigned char {
     MAIN,
 };
 
-using write_format_mark_fn = void (*)(std::ostream&);
-using write_block_fn = void (*)(const std::vector<token>& tokens, std::ostream&);
+using write_format_mark_fn = std::byte* (*)(std::byte * ptr);
+using write_block_fn = std::byte* (*)(const std::vector<token>& tokens,
+                                      std::byte*                ptr);
 using read_block_fn = std::pair<uint64_t, main::streams> (*)(const std::byte* ptr);
-using verify_config_fn = void (*)();
 
 struct format {
     write_format_mark_fn write_format_mark;
     write_block_fn       write_block;
     read_block_fn        read_block;
-    verify_config_fn     verify_config;
 
     static format get_main();
 
