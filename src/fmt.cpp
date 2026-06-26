@@ -57,7 +57,7 @@ const std::byte* header::read(header& h, const std::byte* ptr) {
 }
 
 std::byte* write_format_mark(std::byte* ptr) {
-    *ptr = MAIN;
+    *ptr = static_cast<std::byte>(MAIN);
     return ++ptr;
 }
 
@@ -65,6 +65,10 @@ static constexpr int PRM0 = 4;
 static constexpr int PRM1 = 7;
 
 static void compress_vect(const auto& vect, auto& res) {
+    if (vect.empty()) {
+        res.clear();
+        return;
+    }
     using T = typename std::decay_t<decltype(vect)>::value_type;
     std::vector<std::byte> tmp;
 
@@ -109,6 +113,9 @@ static void compress_vect(const auto& vect, auto& res) {
 
 static void decompress_vect(const std::byte* from, uint32_t bytes, std::byte* to,
                             uint32_t to_size) {
+    if (to_size == 1) {
+        return;
+    }
     std::byte flag = from[0];
     from++;
 
@@ -122,7 +129,7 @@ static void decompress_vect(const std::byte* from, uint32_t bytes, std::byte* to
     } else if (flag == std::byte{3}) {
         ::huf::decompress(from, bytes - 1, to);
     } else if (flag == std::byte{4}) {
-        std::memcpy(to, from, bytes);
+        std::memcpy(to, from, bytes - 1);
     } else if (flag == std::byte{5}) {
         ::rans_static::decompress(from, bytes - 1, to, to_size, 0);
     } else if (flag == std::byte{6}) {
@@ -139,8 +146,8 @@ std::byte* write_block(const std::vector<token>& tokens, std::byte* ptr) {
     std::vector<std::byte> lit;
     std::vector<std::byte> dist;
     std::vector<uint8_t>   len;
-    header                 header;
-    header.orig_bytes = 0;
+    header                 h;
+    h.orig_bytes = 0;
 
     std::vector<std::byte> extra_dist;
     auto                   writer = bit_writer{std::back_inserter(extra_dist)};
@@ -152,10 +159,10 @@ std::byte* write_block(const std::vector<token>& tokens, std::byte* ptr) {
         if (std::holds_alternative<std::byte>(t)) {
             control.push_back(std::byte{0});
             lit.push_back(std::get<std::byte>(t));
-            header.orig_bytes++;
+            h.orig_bytes++;
         } else {
             const auto m = std::get<match>(t);
-            header.orig_bytes += m.length;
+            h.orig_bytes += m.length;
 
             if (m.distance == dist_cache[0]) {
                 control.push_back(std::byte{1});
@@ -190,15 +197,15 @@ std::byte* write_block(const std::vector<token>& tokens, std::byte* ptr) {
     compress_vect(dist, out_dist);
     compress_vect(len, out_len);
 
-    header.n_control = control.size();
-    header.n_lit = lit.size();
-    header.n_dist = dist.size();
-    header.n_len = len.size();
-    header.bytes_control = out_control.size();
-    header.bytes_lit = out_lit.size();
-    header.bytes_dist = out_dist.size();
-    header.bytes_len = out_len.size();
-    header.bytes_extra_dist = extra_dist.size();
+    h.n_control = control.size();
+    h.n_lit = lit.size();
+    h.n_dist = dist.size();
+    h.n_len = len.size();
+    h.bytes_control = out_control.size();
+    h.bytes_lit = out_lit.size();
+    h.bytes_dist = out_dist.size();
+    h.bytes_len = out_len.size();
+    h.bytes_extra_dist = extra_dist.size();
 
     ptr = header::write(h, ptr);
     std::memcpy(ptr, out_control.data(), out_control.size());
@@ -314,22 +321,22 @@ std::pair<uint64_t, streams> read_block(const std::byte* ptr) {
             }
         };
 
-        std::cerr << "=============================\n";
-        std::cerr << std::format(
+        std::cout << "=============================\n";
+        std::cout << std::format(
             "controls:  {} ({}, {}, {}, {}, {}), {} bytes\n", fmt(h.n_control),
             fmt(controls_cnt[0]), fmt(controls_cnt[1]), fmt(controls_cnt[2]),
             fmt(controls_cnt[3]), fmt(controls_cnt[4]), fmt(h.bytes_control));
-        std::cerr << std::format("literals:  {}, {} bytes\n", fmt(h.n_lit),
+        std::cout << std::format("literals:  {}, {} bytes\n", fmt(h.n_lit),
                                  fmt(h.bytes_lit));
-        std::cerr << std::format("distances: {}, {} bytes\n", fmt(h.n_dist),
+        std::cout << std::format("distances: {}, {} bytes\n", fmt(h.n_dist),
                                  fmt(h.bytes_dist));
-        std::cerr << std::format("lengths:   {}, {} bytes\n", fmt(h.n_dist),
+        std::cout << std::format("lengths:   {}, {} bytes\n", fmt(h.n_dist),
                                  fmt(h.bytes_len));
-        std::cerr << std::format("extra:     {}, {} bytes\n", fmt(h.n_dist),
+        std::cout << std::format("extra:     {}, {} bytes\n", fmt(h.n_dist),
                                  fmt(h.bytes_extra_dist));
-        std::cerr << std::format("dist < 32: {} ({:.1f}%)\n", fmt(dist_below_32),
+        std::cout << std::format("dist < 32: {} ({:.1f}%)\n", fmt(dist_below_32),
                                  100.0 * dist_below_32 / h.n_dist);
-        std::cerr << "=============================\n";
+        std::cout << "=============================\n";
     }
 
     res.n_controls = h.n_control;

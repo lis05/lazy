@@ -24,6 +24,7 @@ extern "C" {
 int verbose;
 }
 
+constexpr uint32_t                 mmap_padding = 256;
 static std::pair<std::byte *, int> mmap_file(const std::string &filename,
                                              bool as_input, uint32_t size) {
     if (as_input) {
@@ -41,17 +42,18 @@ static std::pair<std::byte *, int> mmap_file(const std::string &filename,
         return std::pair{ptr, in};
     } else {
         int out = open(filename.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-        if (out == -1 || ftruncate(out, size + 256) == -1) {
+        if (out == -1 || ftruncate(out, size + mmap_padding) == -1) {
             throw std::runtime_error("Failed to open the output file");
         }
 
-        std::byte *ptr = static_cast<std::byte *>(
-            mmap(nullptr, size + 256, PROT_READ | PROT_WRITE, MAP_SHARED, out, 0));
+        std::byte *ptr = static_cast<std::byte *>(mmap(nullptr, size + mmap_padding,
+                                                       PROT_READ | PROT_WRITE,
+                                                       MAP_SHARED, out, 0));
         if (ptr == nullptr) {
             throw std::runtime_error("Failed to mmap " + filename);
         }
 
-        return std::pair{ptr, in};
+        return std::pair{ptr, out};
     }
 }
 
@@ -81,10 +83,15 @@ static void encode(const std::string filename_in, const std::string filename_out
     std::byte *end_ptr = format.write_format_mark(ptr_out);
     end_ptr = format.write_block(tokens, end_ptr);
 
-    munmap(ptr_in);
-    munmap(ptr_out);
+    if (end_ptr - ptr_out > filesize_out) {
+        throw std::runtime_error("File is uncompressible");
+    }
 
-    if (std::ftruncate(out, end_ptr - ptr_out) == -1) {
+    munmap(ptr_out, filesize_out + mmap_padding);
+    filesize_out = end_ptr - ptr_out;
+    munmap(ptr_in, filesize_in);
+
+    if (ftruncate(fd_out, end_ptr - ptr_out) == -1) {
         throw std::runtime_error("Encode failed");
     }
 
@@ -113,7 +120,7 @@ static void decode(const std::string &filename_in, const std::string &filename_o
     std::free(streams.literals);
     std::free(streams.distances);
     std::free(streams.lengths);
-    munmap(ptr_out, orig_size);
+    munmap(ptr_out, orig_size + mmap_padding);
     munmap(ptr_in, in_size);
 
     if (ftruncate(out, orig_size) == -1) {
@@ -164,47 +171,46 @@ int main(int argc, char **argv) {
     bool        run_decoder = false;
     std::string input_file = "";
     std::string output_file = "";
-    app->add_flag("-e", run_encoder, "Run encoder");
-    app->add_flag("-d", run_decoder, "Run decoder");
-    app->add_option("-i", input_file, "Input file")->required();
-    app->add_option("-o", output_file, "Output file")->required();
+    app.add_flag("-e", run_encoder, "Run encoder");
+    app.add_flag("-d", run_decoder, "Run decoder");
+    app.add_option("-i", input_file, "Input file")->required();
+    app.add_option("-o", output_file, "Output file")->required();
 
-    app->add_option("--pl", config::prefix_lengths,
-                    "Comma-separated list of prefix lengths")
+    app.add_option("--pl", config::prefix_lengths,
+                   "Comma-separated list of prefix lengths")
         ->delimiter(',');
-    app->add_option("--mm", config::max_matches,
-                    "Comma-separated list of max matches per prefix length")
+    app.add_option("--mm", config::max_matches,
+                   "Comma-separated list of max matches per prefix length")
         ->delimiter(',');
 
-    app->add_option("-d", config::divisions,
-                    "Number of divisions of the input data");
-    app->add_option("-b", config::hash_bits, "Bits per hash, 0 for a hashtable")
-        app->add_option("-a", config::passes, "How many passes to do");
+    app.add_option("-k", config::divisions, "Number of divisions of the input data");
+    app.add_option("-b", config::hash_bits, "Bits per hash, 0 for a hashtable");
+    app.add_option("-a", config::passes, "How many passes to do");
+    app.add_option("-T", config::threads, "How many threads to use");
 
-    app->add_flag("--turborc", config::use_turborc, "Use TurboRC as backend");
-    app->add_flag("--turboans", config::use_turboans, "Use TurboANS as backend");
-    app->add_flag("--fse", config::use_fse,
-                  "Use finitestateentropy's fse as backend");
-    app->add_flag("--huf", config::use_huf,
-                  "Use finitestateentropy's huf as backend");
-    app->add_flag("--memcpy", config::use_memcpy, "Use memcpy as backend");
-    app->add_flag("--rans_static0", config::use_rans_static0,
-                  "Use rans_static's r32x16b_avx2 order0 as backend");
-    app->add_flag("--rans_static1", config::use_rans_static1,
-                  "Use rans_static's r32x16b_avx2 order1 as backend");
+    app.add_flag("--turborc", config::use_turborc, "Use TurboRC as backend");
+    app.add_flag("--turboans", config::use_turboans, "Use TurboANS as backend");
+    app.add_flag("--fse", config::use_fse,
+                 "Use finitestateentropy's fse as backend");
+    app.add_flag("--huf", config::use_huf,
+                 "Use finitestateentropy's huf as backend");
+    app.add_flag("--memcpy", config::use_memcpy, "Use memcpy as backend");
+    app.add_flag("--rans_static0", config::use_rans_static0,
+                 "Use rans_static's r32x16b_avx2 order0 as backend");
+    app.add_flag("--rans_static1", config::use_rans_static1,
+                 "Use rans_static's r32x16b_avx2 order1 as backend");
 
     bool print_config = false;
-    app->add_flag("-v", config::verbosity, "Verbosity level");
-    app->add_flag("-c", print_config, "Print config and exit");
-    app->add_flag("--stats", config::stats,
-                  "Calculate various statistics and write them to ./stats/");
-    app->add_flag("-m", config::metrics, "Prints compression metrics");
-    app->add_option(
+    app.add_flag("-v", config::verbosity, "Verbosity level");
+    app.add_flag("-c", print_config, "Print config and exit");
+    app.add_flag("--stats", config::stats,
+                 "Calculate various statistics and write them to ./stats/");
+    app.add_flag("-m", config::metrics, "Prints compression metrics");
+    app.add_option(
         "--lhc", config::load_hashchains,
         "Load & sync hashchains to file. Can speed up on subsequent runs");
-    app->add_option(
-        "--lt", config::load_tokens,
-        "Load & sync tokens to file. Completly omits running the parser");
+    app.add_option("--lt", config::load_tokens,
+                   "Load & sync tokens to file. Completly omits running the parser");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -224,10 +230,16 @@ int main(int argc, char **argv) {
         return -1;
     }
 
+    while (config::max_matches.size() < config::prefix_lengths.size()) {
+        config::max_matches.push_back(config::max_matches.back());
+    }
+
     if (print_config) {
         config::print_config();
         return 0;
     }
+
+    config::start_action("Initializing");
     if (run_encoder) {
         auto printer = std::jthread{config::report_progress};
         encode<encoder>(input_file, output_file, printer);

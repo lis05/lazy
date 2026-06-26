@@ -18,7 +18,7 @@ struct header {
     uint32_t bytes_len;
     uint32_t bytes_extra_dist;
 
-    static const std::byte* write(const header& h, std::byte* ptr);
+    static std::byte* write(const header& h, std::byte* ptr);
     static const std::byte* read(header& h, const std::byte* ptr);
 };
 

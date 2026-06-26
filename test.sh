@@ -17,22 +17,65 @@ psize() {
     ls -l "$1" | awk '{print $5}'
 }
 
+# Poll the process tree rooted at $1 every 0.1s, sampling VmPeak each tick.
+# VmPeak is monotonically increasing so we just keep the last non-zero reading
+# and write it to $2 when the process exits.
+poll_vmpeak() {
+    local pid=$1 outfile=$2 last=0
+    while kill -0 "$pid" 2>/dev/null; do
+        local sample
+        sample=$(awk -v root="$pid" '
+            /^Pid:/   { cur = $2 }
+            /^PPid:/  { ppid[cur] = $2 }
+            /^VmPeak:/{ vmpeak[cur] = $2 }
+            END {
+                for (c in ppid) children[ppid[c]] = children[ppid[c]] " " c
+                n = 1; queue[0] = root; total = 0
+                while (n > 0) {
+                    p = queue[--n]
+                    total += vmpeak[p]+0
+                    split(children[p], ch, " ")
+                    for (i in ch) if (ch[i]+0 > 0) queue[n++] = ch[i]
+                }
+                print total
+            }
+        ' /proc/*/status 2>/dev/null)
+        [[ "${sample:-0}" -gt 0 ]] && last=$sample
+        sleep 0.1
+    done
+    echo "$last" > "$outfile"
+}
+
 # Create unique temporary files for encoding and decoding
 encoded_tmp=$(mktemp)
 decoded_tmp=$(mktemp)
+enc_mem_file=$(mktemp)
+dec_mem_file=$(mktemp)
 
 # Ensure temporary files are removed on exit (success or failure)
 cleanup() {
-    rm -f "$encoded_tmp" "$decoded_tmp"
+    rm -f "$encoded_tmp" "$decoded_tmp" "$enc_mem_file" "$dec_mem_file"
 }
 trap cleanup EXIT
 
+# ---------------------------------------------------------------------------
+# Encoding
+# ---------------------------------------------------------------------------
 echo "Encoding..."
-exec 3>&1
-# Capture peak RSS (%M) and Wall clock time (%e)
-enc_err=$({ /usr/bin/time -f "BENCHMARK: %M %e" "$compressor" -e -i "$to_encode" -o "$encoded_tmp" -t "$@"; } 2>&1 1>&3)
+
+enc_start=$(date +%s%N)
+
+"$compressor" -e -i "$to_encode" -o "$encoded_tmp" "$@" &
+enc_pid=$!
+
+poll_vmpeak "$enc_pid" "$enc_mem_file" &
+poll_pid=$!
+
+wait "$enc_pid"
 enc_status=$?
-exec 3>&-
+wait "$poll_pid"
+
+enc_end=$(date +%s%N)
 
 if [ $enc_status -ne 0 ]; then
     echo "Command failed with exit code $enc_status"
@@ -41,25 +84,35 @@ if [ $enc_status -ne 0 ]; then
     elif [ $enc_status -gt 128 ]; then
         echo "Error: Terminated by signal $((enc_status - 128))"
     fi
-    echo "--- Stderr Output ---"
-    echo "$enc_err" | grep -v "BENCHMARK:"
-    echo "---------------------"
     echo "To debug this failure, run:"
-    echo "gdb --args $compressor -e -i $to_encode -o $encoded_tmp -t $*"
+    echo "gdb --args $compressor -e -i $to_encode -o $encoded_tmp $*"
     exit 1
 fi
 
-enc_kb=$(echo "$enc_err" | awk '/BENCHMARK:/ {print $2}')
-enc_wall=$(echo "$enc_err" | awk '/BENCHMARK:/ {print $3}')
-enc_sec=$(awk -v w="$enc_wall" 'BEGIN {printf "%.2f", w}')
+enc_kb=$(cat "$enc_mem_file")
+enc_kb=${enc_kb:-0}
+enc_sec=$(awk -v s="$enc_start" -v e="$enc_end" 'BEGIN {printf "%.2f", (e - s) / 1000000000}')
 
+# ---------------------------------------------------------------------------
+# Decoding  (pinned to a single core)
+# ---------------------------------------------------------------------------
 echo "Decoding (Pinned to core ${DECODE_CORE}, forced single-thread)..."
-exec 4>&1
 
-# Suppress raw output while collecting structural metrics
-dec_err=$({ env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 taskset -c "${DECODE_CORE}" perf stat -x, -e duration_time /usr/bin/time -f "BENCHMARK: %M" "$compressor" -d -i "$encoded_tmp" -o "$decoded_tmp" "$@"; } 2>&1 1>&4)
+dec_start=$(date +%s%N)
+
+env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+    taskset -c "${DECODE_CORE}" \
+    "$compressor" -d -i "$encoded_tmp" -o "$decoded_tmp" "$@" &
+dec_pid=$!
+
+poll_vmpeak "$dec_pid" "$dec_mem_file" &
+poll_pid=$!
+
+wait "$dec_pid"
 dec_status=$?
-exec 4>&-
+wait "$poll_pid"
+
+dec_end=$(date +%s%N)
 
 if [ $dec_status -ne 0 ]; then
     echo "Command failed with exit code $dec_status"
@@ -68,35 +121,30 @@ if [ $dec_status -ne 0 ]; then
     elif [ $dec_status -gt 128 ]; then
         echo "Error: Terminated by signal $((dec_status - 128))"
     fi
-    echo "--- Stderr Output ---"
-    echo "$dec_err" | grep -v "BENCHMARK:"
-    echo "---------------------"
     echo "To debug this failure, run:"
-    echo "$compressor -e -i $to_encode -o $encoded_tmp -t $* && taskset -c ${DECODE_CORE} gdb --args $compressor -d -i $encoded_tmp -o $decoded_tmp $*"
+    echo "$compressor -e -i $to_encode -o $encoded_tmp $* && taskset -c ${DECODE_CORE} gdb --args $compressor -d -i $encoded_tmp -o $decoded_tmp $*"
     exit 1
 fi
 
-# Parse memory usage from the inner time command
-dec_kb=$(echo "$dec_err" | awk '/BENCHMARK:/ {print $2}')
+dec_kb=$(cat "$dec_mem_file")
+dec_kb=${dec_kb:-0}
+dec_sec=$(awk -v s="$dec_start" -v e="$dec_end" 'BEGIN {printf "%.4f", (e - s) / 1000000000}')
 
-# Parse duration_time out of the CSV-formatted perf output
-dec_ns=$(echo "$dec_err" | awk -F, '/duration_time/ {print $1}')
-dec_sec=$(awk -v ns="$dec_ns" 'BEGIN {printf "%.4f", ns / 1000000000}')
-
-# Calculate compression ratio in %
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
 orig_size=$(psize "$to_encode")
 comp_size=$(psize "$encoded_tmp")
 ratio=$(awk -v c="$comp_size" -v o="$orig_size" 'BEGIN {printf "%.2f", (c/o)*100}')
 
-# Convert peak memory KB to MB
 enc_mb=$(awk -v k="$enc_kb" 'BEGIN {printf "%.2f", k/1024}')
 dec_mb=$(awk -v k="$dec_kb" 'BEGIN {printf "%.2f", k/1024}')
 
 echo "    Compression: $(phsize "$encoded_tmp") ($(psize "$encoded_tmp") bytes) / $(phsize "$to_encode") [Ratio: ${ratio}%]"
 echo "    Compression Time   : ${enc_sec} s"
 echo "    Decompression Time : ${dec_sec} s"
-echo "    Max RAM Usage (Enc): ${enc_mb} MB"
-echo "    Max RAM Usage (Dec): ${dec_mb} MB"
+echo "    Max VmPeak (Enc)   : ${enc_mb} MB"
+echo "    Max VmPeak (Dec)   : ${dec_mb} MB"
 
 cmp "$to_encode" "$decoded_tmp"
 res=$?

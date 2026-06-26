@@ -8,7 +8,9 @@
 #include <thread>
 
 #include "bins.h"
+#include "hashes.h"
 #include "split.h"
+#include "strmatch.h"
 #include "table.h"
 #include "worker_pool.h"
 
@@ -136,7 +138,7 @@ static bool load_hashchains(encoder &enc) {
         return false;
     }
 
-    enc->chains = std::move(h.chains);
+    enc.chains = std::move(h.chains);
     return true;
 }
 
@@ -214,7 +216,7 @@ bool load_tokens(encoder &enc) {
     }
 
     uint32_t current_checksum =
-        static_cast<uint32_t>(enc.hashes::hashn(enc.data.data(), enc.bytes_loaded));
+        static_cast<uint32_t>(hashes::hashn(enc.data.data(), enc.bytes_loaded));
     if (t.data_checksum != current_checksum) {
         return false;
     }
@@ -229,7 +231,7 @@ void sync_tokens(const encoder &enc) {
     }
 
     uint32_t current_checksum =
-        static_cast<uint32_t>(enc.hashes::hashn(enc.data.data(), enc.bytes_loaded));
+        static_cast<uint32_t>(hashes::hashn(enc.data.data(), enc.bytes_loaded));
 
     config::start_action(std::format("Saving tokens to {}", config::load_tokens));
     std::ofstream out(config::load_tokens, std::ios::binary);
@@ -260,11 +262,19 @@ void encoder::reset_for_next_pass(uint32_t pass) {
     T chains_saved;
     chains_saved.swap(chains);
 
+    using U = decltype(data);
+    U data_saved;
+    data_saved.swap(data);
+
+    uint32_t bytes_loaded_saved = bytes_loaded;
+
     bool are_tokens_available_saved = are_tokens_available;
 
     *this = encoder();
     this->chains.swap(chains_saved);
     this->are_tokens_available = are_tokens_available_saved;
+    this->data.swap(data_saved);
+    this->bytes_loaded = bytes_loaded_saved;
 }
 
 [[gnu::always_inline]] static inline void process(
@@ -285,7 +295,7 @@ void encoder::reset_for_next_pass(uint32_t pass) {
         const uint32_t *chain_ptr = chains_ptr[prefix].data();
 
         uint32_t count = max_matches_ptr[prefix];
-        for (uint32_t pos = chain_ptr[i]; pos != NONE32 && --count > 0;
+        for (uint32_t pos = chain_ptr[i]; --count > 0 && pos != NONE32;
              pos = chain_ptr[pos]) {
             uint32_t match_len =
                 strmatch::match(future_limit, data_ptr + pos, data_ptr + i) & 0xFF;
@@ -320,7 +330,7 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
     worker_pool pool(config::threads);
 
     if (chains.empty() && !load_hashchains(*this)) {
-        hashes.resize(bytes_loaded);
+        std::vector<uint32_t> hashes(bytes_loaded);
         chains.resize(config::prefix_lengths.size());
 
         __gnu_pbds::gp_hash_table<uint32_t, uint32_t> head_gp;
@@ -352,14 +362,15 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
 
             finished.wait();
 
-            config::print_message(
+            config::start_action(
                 std::format("Calculating chain for prefix_len = {}", prefix_len));
 
             chains[prefix].resize(bytes_loaded);
-            uint32_t chain_ptr = chains[prefix].data();
+            uint32_t *chain_ptr = chains[prefix].data();
             if (config::hash_bits == 0) {
                 for (uint32_t i = 0; i < bytes_loaded; i++) {
-                    auto it = head_gp.find(hashes_ptr[i]);
+                    uint32_t h = hashes_ptr[i];
+                    auto     it = head_gp.find(h);
                     if (it == head_gp.end()) {
                         chain_ptr[i] = NONE32;
                     } else {
@@ -370,19 +381,14 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
                 head_gp.clear();
             } else {
                 for (uint32_t i = 0; i < bytes_loaded; i++) {
-                    auto h = hashes_ptr[i];
-                    pr_ptr[i] = head_t.get(h);
+                    uint32_t h = hashes_ptr[i];
+                    chain_ptr[i] = head_t.get(h);
                     head_t.insert(h, i);
                 }
                 head_t.clear();
             }
         }
         sync_hashchains(*this);
-    }
-
-    {
-        using T = decltype(hashes);
-        T{}.swap(hashes);
     }
 
     // write_stats_hashes(est);
@@ -431,35 +437,39 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
             dp_from_ptr[i - start] = start;
             dp_pos_ptr[i - start] = NONE32;
             while (i < end) {
+                std::fill(dp_sheet_ptr, dp_sheet_ptr + config::max_match_length + 1,
+                          NONE32);
                 process(i, data_ptr, chains_ptr, prefix_lengths_ptr, max_matches_ptr,
-                        sheet_ptr);
+                        dp_sheet_ptr);
 
                 for (uint32_t match_len = config::max_match_length;
                      match_len >= config::min_match_length; match_len--) {
                     if (match_len != config::max_match_length &&
-                        sheet_ptr[match_len + 1] != NONE32 &&
-                        (sheet_ptr[match_len] == NONE32 ||
-                         sheet_ptr[match_len] < sheet_ptr[match_len + 1])) {
-                        sheet_ptr[match_len] = sheet_ptr[match_len + 1];
+                        dp_sheet_ptr[match_len + 1] != NONE32 &&
+                        (dp_sheet_ptr[match_len] == NONE32 ||
+                         dp_sheet_ptr[match_len] < dp_sheet_ptr[match_len + 1])) {
+                        dp_sheet_ptr[match_len] = dp_sheet_ptr[match_len + 1];
                     }
 
-                    if (sheet_ptr[match_len] == NONE32) {
+                    if (dp_sheet_ptr[match_len] == NONE32) {
                         continue;
                     }
 
-                    double edge_cost = est.match_cost(i - sheet_ptr[match_len],
-                                                      match_len, states[i]);
+                    double edge_cost =
+                        est.match_cost(i - dp_sheet_ptr[match_len], match_len,
+                                       dp_state_ptr[i - start]);
                     // edge
-                    if (i + match_len < end) {
+                    if (i + match_len <= end) {
                         double new_cost = dp_cost_ptr[i - start] + edge_cost;
                         if (dp_cost_ptr[i + match_len - start] > new_cost) {
                             dp_cost_ptr[i + match_len - start] = new_cost;
                             dp_from_ptr[i + match_len - start] = i;
-                            dp_pos_ptr[i + match_len - start] = sheet_ptr[match_len];
-                            const auto &src = states[i - start];
-                            auto       &s = states[i - start + match_len];
+                            dp_pos_ptr[i + match_len - start] =
+                                dp_sheet_ptr[match_len];
+                            const auto &src = dp_state_ptr[i - start];
+                            auto       &s = dp_state_ptr[i - start + match_len];
                             s = estimators::state{
-                                static_cast<uint32_t>(i - sheet_ptr[match_len]),
+                                static_cast<uint32_t>(i - dp_sheet_ptr[match_len]),
                                 src.dist_cache[0], src.dist_cache[1]};
                         }
                     }
@@ -473,8 +483,8 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
                     if (dp_cost_ptr[i + 1 - start] > new_cost) {
                         dp_cost_ptr[i + 1 - start] = new_cost;
                         dp_from_ptr[i + 1 - start] = i;
-                        const auto &src = states[i - start];
-                        auto       &s = states[i + 1 - start];
+                        const auto &src = dp_state_ptr[i - start];
+                        auto       &s = dp_state_ptr[i + 1 - start];
                         s = src;
                     }
                 }
@@ -492,7 +502,7 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
                 uint32_t came_from = dp_from_ptr[i - start];
                 if (came_from + 1 == i) {
                     // literal
-                    dp_tokes_ptr.push_back(data_ptr[came_from]);
+                    dp_tokens[block_index].push_back(data_ptr[came_from]);
                     i = came_from;
                     continue;
                 }
@@ -506,7 +516,7 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
                         i, best_match_len));
                 }
 
-                dp_tokens_ptr.push_back(
+                dp_tokens[block_index].push_back(
                     match{came_from - best_match_pos, best_match_len});
                 i = came_from;
             }
@@ -516,24 +526,24 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
             }
 
             {
-                using T = decltype(dp_sheet);
-                T{}.swap(dp_sheet);
+                using T = std::decay_t<decltype(dp_sheet[block_index])>;
+                T{}.swap(dp_sheet[block_index]);
             }
             {
-                using T = decltype(dp_cost);
-                T{}.swap(dp_cost);
+                using T = std::decay_t<decltype(dp_cost[block_index])>;
+                T{}.swap(dp_cost[block_index]);
             }
             {
-                using T = decltype(dp_from);
-                T{}.swap(dp_from);
+                using T = std::decay_t<decltype(dp_from[block_index])>;
+                T{}.swap(dp_from[block_index]);
             }
             {
-                using T = decltype(dp_pos);
-                T{}.swap(dp_pos);
+                using T = std::decay_t<decltype(dp_pos[block_index])>;
+                T{}.swap(dp_pos[block_index]);
             }
             {
-                using T = decltype(dp_state);
-                T{}.swap(dp_state);
+                using T = std::decay_t<decltype(dp_state[block_index])>;
+                T{}.swap(dp_state[block_index]);
             }
 
             finished.count_down();
@@ -550,13 +560,46 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
         for (auto &ee : e) {
             tokens.push_back(ee);
         }
+    }
 
-        using T = std::decay_t<decltype(e)>;
-        T{}.swap(e);
+    config::start_action("Verifying");
+    uint32_t pos = 0;
+    for (const auto &e : tokens) {
+        if (std::holds_alternative<std::byte>(e)) {
+            std::byte b = std::get<std::byte>(e);
+            if (data_ptr[pos] != b) {
+                throw std::runtime_error(
+                    "Compression failed: invalid stream of tokens: literal mismatch "
+                    "at " +
+                    std::to_string(pos));
+            }
+            pos++;
+        } else {
+            match m = std::get<match>(e);
+            for (uint32_t cnt = 0; cnt < m.length; cnt++) {
+                if (m.distance > pos) {
+                    throw std::runtime_error(
+                        "Compression failed: invalid stream of tokens: distance too "
+                        "large at " +
+                        std::to_string(pos));
+                }
+                if (data_ptr[pos - m.distance] != data_ptr[pos]) {
+                    throw std::runtime_error(
+                        "Compression failed: invalid stream of tokens: invalid "
+                        "match byte at " +
+                        std::to_string(pos));
+                }
+                pos++;
+            }
+        }
+    }
+
+    if (pos != bytes_loaded) {
+        throw std::runtime_error("Compression failed: invalid stream of tokens");
     }
 
     if (pass + 1 == config::passes) {
-        sync_tokens();
+        sync_tokens(*this);
     }
 
     // write_stats_tokens(est);
@@ -565,7 +608,7 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
         est.clear();
 
         std::vector<uint8_t> controls, lengths, literals, ctx;
-        estimators::state    s{0, 0, 0};
+        estimators::state    s{NONE32, NONE32, NONE32};
 
         for (const auto &t : tokens) {
             if (std::holds_alternative<std::byte>(t)) {
