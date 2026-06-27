@@ -14,9 +14,11 @@ However, the greatest downside is memory usage during compression, as each hashc
 requires 4\*N bytes to be stored in memory. Also, compression time (on max levels)
 can get far beyond zstd's in the negative way.
 
-## Compression To explain how compression works, let's consider running the following
-command: `lzmpo -e -i enwik9 -o compressed --pl 5,8,16 --mm 100,50,20 -T16 -k256 -a5
--b20 --fse`
+## Compression
+
+To explain how compression works, let's consider running the following command:
+`lzmpo -e -i enwik9 -o compressed --pl 5,8,16 --mm 100,50,20 -T16 -k256 -a5 -b20
+--fse`
 
 The first thing that happens is `enwik9` being mmaped into the memory view. After
 this, an `encoder` class will be instantiated, and the mmaped file will be passed to
@@ -129,6 +131,16 @@ Each stream (controls, literals, distanc groups, distance extra bits, lengths) i
 encoded and written to the output file.
 
 ## Decompression
-Decompression is highly efficient as almost no memory is used. For copying, efficient
-simd routine is used. Branches are minimized.
 
+Decompression is highly efficient as almost no memory is used.For copying, efficient
+simd routine is used.Branches are minimized.
+
+## Memory usage
+
+During compression, memory usage is about `4*N*M + 8*N/K*T + 4*N/K*T + 4*N/K*T +
+12*N/K*T` = `4*N*M + 28*N/K*T` bytes where N is the input file size, M is the number
+of prefix lengths, K is the number of blocks, T is the number of threads.
+
+Additionally, if `-b` is set to `0 < X <= 32`, exactly `4*2^X` bytes will be used by
+the hash table.Otherwise, if its set to 0, it will use at most as many bytes as when
+`-b` is set to `log2(N)`
