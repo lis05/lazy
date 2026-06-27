@@ -1,4 +1,5 @@
 #!/bin/bash
+set -m
 
 compressor=$1
 to_encode=$2
@@ -57,6 +58,13 @@ cleanup() {
     rm -f "$encoded_tmp" "$decoded_tmp" "$enc_mem_file" "$dec_mem_file"
 }
 trap cleanup EXIT
+
+cleanup_signal() {
+    # Kill all immediate background children (compressor and poller)
+    pkill -P $$ 2>/dev/null
+    exit 1
+}
+trap cleanup_signal INT TERM
 
 # ---------------------------------------------------------------------------
 # Encoding

@@ -14,6 +14,8 @@
 #include "table.h"
 #include "worker_pool.h"
 
+constexpr uint32_t padding = 32;
+
 struct saved_hashchains {
     uint32_t                           data_checksum;
     std::vector<uint32_t>              prefix_lengths;
@@ -131,8 +133,8 @@ static bool load_hashchains(encoder &enc) {
         throw std::runtime_error("load_hashchains: File read error");
     }
 
-    uint32_t current_checksum =
-        static_cast<uint32_t>(hashes::hashn(enc.data.data(), enc.bytes_loaded));
+    uint32_t current_checksum = static_cast<uint32_t>(
+        hashes::hashn(enc.data.data(), enc.bytes_loaded + padding));
     if (h.data_checksum != current_checksum ||
         !std::ranges::equal(h.prefix_lengths, config::prefix_lengths)) {
         return false;
@@ -147,8 +149,8 @@ void sync_hashchains(const encoder &enc) {
         return;
     }
 
-    uint32_t current_checksum =
-        static_cast<uint32_t>(hashes::hashn(enc.data.data(), enc.bytes_loaded));
+    uint32_t current_checksum = static_cast<uint32_t>(
+        hashes::hashn(enc.data.data(), enc.bytes_loaded + padding));
 
     std::ifstream in(config::load_hashchains, std::ios::binary);
     if (in) {
@@ -215,8 +217,8 @@ bool load_tokens(encoder &enc) {
         throw std::runtime_error("load_tokens: File read error");
     }
 
-    uint32_t current_checksum =
-        static_cast<uint32_t>(hashes::hashn(enc.data.data(), enc.bytes_loaded));
+    uint32_t current_checksum = static_cast<uint32_t>(
+        hashes::hashn(enc.data.data(), enc.bytes_loaded + padding));
     if (t.data_checksum != current_checksum) {
         return false;
     }
@@ -230,8 +232,8 @@ void sync_tokens(const encoder &enc) {
         return;
     }
 
-    uint32_t current_checksum =
-        static_cast<uint32_t>(hashes::hashn(enc.data.data(), enc.bytes_loaded));
+    uint32_t current_checksum = static_cast<uint32_t>(
+        hashes::hashn(enc.data.data(), enc.bytes_loaded + padding));
 
     config::start_action(std::format("Saving tokens to {}", config::load_tokens));
     std::ofstream out(config::load_tokens, std::ios::binary);
@@ -248,9 +250,12 @@ void sync_tokens(const encoder &enc) {
 }
 
 void encoder::load(const std::byte *from, uint32_t count) {
-    bytes_loaded = count;
-    data.resize(bytes_loaded + 256);
-    std::memcpy(data.data(), from, bytes_loaded);
+    if (count < 128) {
+        throw std::runtime_error("File is incompressible");
+    }
+    bytes_loaded = count - padding;
+    data.resize(count);
+    std::memcpy(data.data(), from, count);
 }
 
 void encoder::reset_for_next_pass(uint32_t pass) {
@@ -295,6 +300,7 @@ void encoder::reset_for_next_pass(uint32_t pass) {
         const uint32_t *chain_ptr = chains_ptr[prefix].data();
 
         uint32_t count = max_matches_ptr[prefix];
+        // NOTE: --count is intentionally treating 0 as max depth
         for (uint32_t pos = chain_ptr[i]; --count > 0 && pos != NONE32;
              pos = chain_ptr[pos]) {
             uint32_t match_len =
@@ -393,9 +399,9 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
 
     // write_stats_hashes(est);
 
-    config::start_action_with_counter(std::format("Compressing divisions"));
+    config::start_action_with_counter(std::format("Compressing blocks"));
 
-    auto blocks = split_range(bytes_loaded, config::divisions, 1, bytes_loaded);
+    auto       blocks = split_range(bytes_loaded, config::blocks, 1, bytes_loaded);
     std::latch finished(blocks.size());
 
     config::max_counter = blocks.size();
@@ -562,6 +568,11 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
         }
     }
 
+    // last 32 are literals so that decoding can be more branchless
+    for (uint32_t cnt = 0; cnt < padding; cnt++) {
+        tokens.push_back(data_ptr[bytes_loaded + cnt]);
+    }
+
     config::start_action("Verifying");
     uint32_t pos = 0;
     for (const auto &e : tokens) {
@@ -594,7 +605,7 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
         }
     }
 
-    if (pos != bytes_loaded) {
+    if (pos != bytes_loaded + padding) {
         throw std::runtime_error("Compression failed: invalid stream of tokens");
     }
 

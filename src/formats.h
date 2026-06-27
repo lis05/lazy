@@ -17,7 +17,7 @@ enum marks : unsigned char {
 
 using write_format_mark_fn = std::byte* (*)(std::byte * ptr);
 using write_block_fn = std::byte* (*)(const std::vector<token>& tokens,
-                                      std::byte*                ptr);
+                                      std::byte* ptr, uint32_t max_size);
 using read_block_fn = std::pair<uint64_t, main::streams> (*)(const std::byte* ptr);
 
 struct format {

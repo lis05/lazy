@@ -24,7 +24,6 @@ extern "C" {
 int verbose;
 }
 
-constexpr uint32_t                 mmap_padding = 256;
 static std::pair<std::byte *, int> mmap_file(const std::string &filename,
                                              bool as_input, uint32_t size) {
     if (as_input) {
@@ -42,13 +41,12 @@ static std::pair<std::byte *, int> mmap_file(const std::string &filename,
         return std::pair{ptr, in};
     } else {
         int out = open(filename.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-        if (out == -1 || ftruncate(out, size + mmap_padding) == -1) {
+        if (out == -1 || ftruncate(out, size) == -1) {
             throw std::runtime_error("Failed to open the output file");
         }
 
-        std::byte *ptr = static_cast<std::byte *>(mmap(nullptr, size + mmap_padding,
-                                                       PROT_READ | PROT_WRITE,
-                                                       MAP_SHARED, out, 0));
+        std::byte *ptr = static_cast<std::byte *>(
+            mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, out, 0));
         if (ptr == nullptr) {
             throw std::runtime_error("Failed to mmap " + filename);
         }
@@ -81,17 +79,17 @@ static void encode(const std::string filename_in, const std::string filename_out
 
     auto       format = formats::format::get_for_option(config::format);
     std::byte *end_ptr = format.write_format_mark(ptr_out);
-    end_ptr = format.write_block(tokens, end_ptr);
+    end_ptr = format.write_block(tokens, end_ptr, filesize_out);
 
     if (end_ptr - ptr_out > filesize_out) {
-        throw std::runtime_error("File is uncompressible");
+        throw std::runtime_error("File is incompressible");
     }
 
-    munmap(ptr_out, filesize_out + mmap_padding);
+    munmap(ptr_out, filesize_out);
     filesize_out = end_ptr - ptr_out;
     munmap(ptr_in, filesize_in);
 
-    if (ftruncate(fd_out, end_ptr - ptr_out) == -1) {
+    if (ftruncate(fd_out, filesize_out) == -1) {
         throw std::runtime_error("Encode failed");
     }
 
@@ -120,7 +118,7 @@ static void decode(const std::string &filename_in, const std::string &filename_o
     std::free(streams.literals);
     std::free(streams.distances);
     std::free(streams.lengths);
-    munmap(ptr_out, orig_size + mmap_padding);
+    munmap(ptr_out, orig_size);
     munmap(ptr_in, in_size);
 
     if (ftruncate(out, orig_size) == -1) {
@@ -163,18 +161,19 @@ public:
 int main(int argc, char **argv) {
     dist_bins::precalc();
 
-    CLI::App app{"lzmpo: LZ77 multiple prefixes optimal compressor"};
+    CLI::App app("LZ77 multiple prefixes optimal compressor",
+                 std::string("lzmpo ") + config::version);
     app.formatter(std::make_shared<CleanFormatter>());
     argv = app.ensure_utf8(argv);
 
     bool        run_encoder = false;
     bool        run_decoder = false;
-    std::string input_file = "";
-    std::string output_file = "";
+    std::string input_file = "input.lzmpo";
+    std::string output_file = "output.lzmpo";
     app.add_flag("-e", run_encoder, "Run encoder");
     app.add_flag("-d", run_decoder, "Run decoder");
-    app.add_option("-i", input_file, "Input file")->required();
-    app.add_option("-o", output_file, "Output file")->required();
+    app.add_option("-i", input_file, "Input file");
+    app.add_option("-o", output_file, "Output file");
 
     app.add_option("--pl", config::prefix_lengths,
                    "Comma-separated list of prefix lengths")
@@ -182,11 +181,20 @@ int main(int argc, char **argv) {
     app.add_option("--mm", config::max_matches,
                    "Comma-separated list of max matches per prefix length")
         ->delimiter(',');
-
-    app.add_option("-k", config::divisions, "Number of divisions of the input data");
+    app.add_option("-k", config::blocks, "Divide input into blocks");
     app.add_option("-b", config::hash_bits, "Bits per hash, 0 for a hashtable");
     app.add_option("-a", config::passes, "How many passes to do");
     app.add_option("-T", config::threads, "How many threads to use");
+    app.add_flag("-0", config::level[0], "L");
+    app.add_flag("-1", config::level[1], "L");
+    app.add_flag("-2", config::level[2], "L");
+    app.add_flag("-3", config::level[3], "L");
+    app.add_flag("-4", config::level[4], "L");
+    app.add_flag("-5", config::level[5], "L");
+    app.add_flag("-6", config::level[6], "L");
+    app.add_flag("-7", config::level[7], "L");
+    app.add_flag("-8", config::level[8], "L");
+    app.add_flag("-9", config::level[9], "L");
 
     app.add_flag("--turborc", config::use_turborc, "Use TurboRC as backend");
     app.add_flag("--turboans", config::use_turboans, "Use TurboANS as backend");
@@ -201,6 +209,7 @@ int main(int argc, char **argv) {
                  "Use rans_static's r32x16b_avx2 order1 as backend");
 
     bool print_config = false;
+    bool print_version = false;
     app.add_flag("-v", config::verbosity, "Verbosity level");
     app.add_flag("-c", print_config, "Print config and exit");
     app.add_flag("--stats", config::stats,
@@ -211,8 +220,18 @@ int main(int argc, char **argv) {
         "Load & sync hashchains to file. Can speed up on subsequent runs");
     app.add_option("--lt", config::load_tokens,
                    "Load & sync tokens to file. Completly omits running the parser");
+    app.add_flag("-V", print_version, "Print version");
 
     CLI11_PARSE(app, argc, argv);
+    if (print_version) {
+        std::cout << config::version << "\n";
+        return 0;
+    }
+
+    if (!run_decoder && !run_encoder) {
+        std::cout << "-i nor -d selected, no action taken\n";
+        return 0;
+    }
 
     if (std::filesystem::file_size(input_file) >= 2e9) {
         std::cerr << "Cannot work with files larger than 2e9 bytes\n";
@@ -222,7 +241,7 @@ int main(int argc, char **argv) {
     if (!config::use_turborc && !config::use_turboans && !config::use_fse &&
         !config::use_huf && !config::use_memcpy && !config::use_rans_static0 &&
         !config::use_rans_static1) {
-        config::use_turborc = true;
+        config::use_rans_static0 = true;
     }
 
     if (config::hash_bits > 32) {
@@ -230,8 +249,13 @@ int main(int argc, char **argv) {
         return -1;
     }
 
+    config::apply_level();
+
     while (config::max_matches.size() < config::prefix_lengths.size()) {
         config::max_matches.push_back(config::max_matches.back());
+    }
+    while (config::max_matches.size() > config::prefix_lengths.size()) {
+        config::max_matches.pop_back();
     }
 
     if (print_config) {
@@ -245,6 +269,7 @@ int main(int argc, char **argv) {
         encode<encoder>(input_file, output_file, printer);
     } else if (run_decoder) {
         auto printer = std::jthread{config::report_progress};
+        config::passes = 1;
         decode(input_file, output_file, printer);
     }
 

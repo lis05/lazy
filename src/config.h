@@ -18,7 +18,7 @@ public:
 
     static std::vector<uint32_t> max_matches;
     static std::vector<uint32_t> prefix_lengths;
-    static uint32_t              divisions;
+    static uint32_t              blocks;
     static uint32_t              hash_bits;
     static uint32_t              passes;
     static uint32_t              threads;
@@ -39,7 +39,7 @@ public:
     static bool     metrics;
     static uint32_t verbosity;
 
-    static bool level[15];
+    static bool level[30];
 
     static std::atomic<uint64_t> counter;
     static uint64_t              max_counter;
@@ -49,4 +49,5 @@ public:
     static void                  finish();
     static void                  print_config();
     static void                  report_progress();
+    static void                  apply_level();
 };

@@ -13,7 +13,7 @@
 
 std::vector<uint32_t> config::max_matches{20};
 std::vector<uint32_t> config::prefix_lengths{5};
-uint32_t              config::divisions = 1;
+uint32_t              config::blocks = 1;
 uint32_t              config::hash_bits = 0;
 uint32_t              config::passes = 1;
 uint32_t              config::threads = 1;
@@ -34,17 +34,17 @@ bool     config::stats = false;
 bool     config::metrics = false;
 uint32_t config::verbosity = 0;
 
-bool config::level[15] = {};
+bool config::level[30] = {};
 
 void config::print_config() {
-    int l = 0;
+    int l = -1;
     for (int i = 0; i < sizeof(config::level) / sizeof(config::level[0]); i++) {
         if (level[i])
             l = i;
     }
 
-    std::cout << std::format("divisions={} passes={} threads={} hash_bits={}\n",
-                             divisions, passes, threads, hash_bits);
+    std::cout << std::format("blocks={} passes={} threads={} hash_bits={}\n", blocks,
+                             passes, threads, hash_bits);
 
     std::cout << std::format("prefix_lengths=[{}]\n", [&] {
         std::string s;
@@ -281,3 +281,65 @@ void config::report_progress() {
     std::cout << "\n";
 }
 
+void config::apply_level() {
+    uint32_t T = std::thread::hardware_concurrency();
+
+    threads = T;
+    blocks = 256;
+
+    if (level[0]) {
+        prefix_lengths = {5};
+        max_matches = {5};
+        passes = 1;
+    }
+    if (level[1]) {
+        prefix_lengths = {5, 6, 8};
+        max_matches = {20, 10, 5};
+        passes = 1;
+    }
+    if (level[2]) {
+        prefix_lengths = {5, 6, 8};
+        max_matches = {100, 50, 20};
+        passes = 1;
+    }
+    if (level[3]) {
+        prefix_lengths = {5, 6, 8, 12};
+        max_matches = {200, 100, 70, 50};
+        passes = 1;
+    }
+    if (level[4]) {
+        prefix_lengths = {5, 6, 8, 12, 16};
+        max_matches = {200, 100, 70, 50, 40};
+        passes = 2;
+    }
+    if (level[5]) {
+        prefix_lengths = {5, 6, 8, 12, 16, 20};
+        max_matches = {300, 150, 90, 70, 50, 40};
+        passes = 2;
+    }
+    if (level[6]) {
+        prefix_lengths = {5, 6, 8, 12, 16, 20};
+        max_matches = {400, 250, 150, 100, 80, 60};
+        passes = 2;
+    }
+    if (level[6]) {
+        prefix_lengths = {5, 6, 8, 12, 16, 20, 24};
+        max_matches = {500, 300, 200, 150, 100, 70, 40};
+        passes = 3;
+    }
+    if (level[7]) {
+        prefix_lengths = {5, 6, 8, 12, 16, 20, 24};
+        max_matches = {700, 450, 300, 250, 150, 90, 70};
+        passes = 3;
+    }
+    if (level[8]) {
+        prefix_lengths = {5, 6, 8, 12, 16, 20, 24};
+        max_matches = {1000, 800, 600, 400, 200, 100, 100};
+        passes = 4;
+    }
+    if (level[9]) {
+        prefix_lengths = {5, 6, 8, 12, 16, 20, 24};
+        max_matches = {5000, 3000, 2000, 1500, 800, 500, 300};
+        passes = 4;
+    }
+}

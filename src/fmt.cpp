@@ -139,7 +139,8 @@ static void decompress_vect(const std::byte* from, uint32_t bytes, std::byte* to
     }
 }
 
-std::byte* write_block(const std::vector<token>& tokens, std::byte* ptr) {
+std::byte* write_block(const std::vector<token>& tokens, std::byte* ptr,
+                       uint32_t max_size) {
     // todo: replace vectors with mallocated memory
     config::start_action("Encoding tokens");
     std::vector<std::byte> control;
@@ -207,6 +208,12 @@ std::byte* write_block(const std::vector<token>& tokens, std::byte* ptr) {
     h.bytes_len = out_len.size();
     h.bytes_extra_dist = extra_dist.size();
 
+    if (sizeof(h) + out_control.size() + out_lit.size() + out_dist.size() +
+            out_len.size() + extra_dist.size() >
+        max_size) {
+        throw std::runtime_error("File is incompressible");
+    }
+
     ptr = header::write(h, ptr);
     std::memcpy(ptr, out_control.data(), out_control.size());
     ptr += out_control.size();
@@ -266,7 +273,6 @@ std::pair<uint64_t, streams> read_block(const std::byte* ptr) {
             d = dist_cache[0];
             dist_cache[2] = dist_cache[1];
             dist_cache[1] = dist_cache[0];
-            dist_cache[0] = d;
             res.distances[dist_i++] = d;
             break;
         case 2:
