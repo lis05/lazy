@@ -51,7 +51,7 @@ faster.
 The previous 2 steps will also be repeated for prefix lengths 8 and 16, resulting in
 total of 3 hash chains built.
 
-Now the encoder will being the actual parsing of the file. The file is split into 256
+Now the encoder will begin the actual parsing of the file. The file is split into 256
 (as specified by `-k256`) blocks, where each block will be processed by a separate of
 the 16 threads. This is done to improve performance, as in the worst case only 1
 threat will be left processing `1e9 / 256` bytes instead of `1e9 / 16`. Basically, we
@@ -144,3 +144,35 @@ of prefix lengths, K is the number of blocks, T is the number of threads.
 Additionally, if `-b` is set to `0 < X <= 32`, exactly `4*2^X` bytes will be used by
 the hash table.Otherwise, if its set to 0, it will use at most as many bytes as when
 `-b` is set to `log2(N)`
+
+## Compression levels
+
+These were created purely on my intuition and some prior testing.
+
+- `-0`  Same as `-T<supported threads> -k256 --pl 5 --mm 5 -a1`
+- `-1`  Same as `-T<supported threads> -k256 --pl 5,6,8 --mm 20,10,5 -a1`
+- `-2`  Same as `-T<supported threads> -k256 --pl 5,6,8 --mm 100,50,20 -a1`
+- `-3`  Same as `-T<supported threads> -k256 --pl 5,6,8,12 --mm 200,100,70,50 -a1`
+- `-4`  Same as `-T<supported threads> -k256 --pl 5,6,8,12,16 --mm 200,100,70,50,40 -a2`
+- `-5`  Same as `-T<supported threads> -k256 --pl 5,6,8,12,16,20 --mm 300,150,90,70,50,40 -a2`
+- `-6`  Same as `-T<supported threads> -k256 --pl 5,6,8,12,16,20 --mm 400,250,150,100,80,60 -a2`
+- `-7`  Same as `-T<supported threads> -k256 --pl 5,6,8,12,16,20,24 --mm 500,300,200,150,100,70,40 -a3`
+- `-8`  Same as `-T<supported threads> -k256 --pl 5,6,8,12,16,20,24 --mm 1000,800,600,400,200,100,100 -a4`
+- `-9` Same as `-T<supported threads> -k256 --pl 5,6,8,12,16,20,24 --mm 5000,3000,2000,1500,800,500,300 -a4`
+
+Parameters such as `-b` are not set by any level. Also, if no level is specified, you
+can set all parameters to custom values.
+
+## Used libraries
+1. [a5hash](https://github.com/avaneev/a5hash) for fast hashing
+2. [Turbo-Range-Coder](https://github.com/powturbo/Turbo-Range-Coder) for `--turborc` and `--turboans`
+3. [finitestateentropy](https://github.com/cyan4973/finitestateentropy) for `--fse` and `--huf`
+4. [rans_static](https://github.com/jkbonfield/rans_static) for `--rans_static0` and
+   `--rans_static1`
+5. [CLI11](https://github.com/cliutils/cli11) for CLI
+6. [misacpy](https://github.com/welcome-to-the-sunny-side/misacpy) which was modified
+   by its author and me to fit lzmpo
+
+## How to build
+Pull all dependencies 
+
