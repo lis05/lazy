@@ -1,7 +1,134 @@
 # lzmpo - LZ77 multiple prefixes optimal compressor
 
-lzmpo is an experimental compressor with modified LZ77 frontend and entropy encoded
-(via Turbo-Range-Coder) backend. It is designed to give good ratios on big files, but
-in turn requires a lot of time and extreme amounts of memory to run.
+lzmpo is an experimental compressor built around the following heuristic: two longer
+strings are less likely to have the same hash than two shorter strings. It builds
+hashchains (linking positions with the same hash of the data) for several lengths of
+the hashed substring (called prefix) which cover the entire file. Due to this, better
+matches can be found quicker by searching along the hashchain built for the greatest
+prefix length. Another upside is that compression ratio gets better as the size of
+the input file grows, outperforming zstd on enwik9. Additionally, decompression speed
+and memory usage generally stay within the same league as zstd, averaging at about
+70-80% speed of zstd and practically the same memory usage;
 
-Presentation describing the project and some results: [google slides](https://docs.google.com/presentation/d/1LI7GBQD-ZtUkUaNdjJq4kEuXYDhbfT-nw3fNWvhpP10/edit?usp=sharing)
+However, the greatest downside is memory usage during compression, as each hashchain
+requires 4\*N bytes to be stored in memory. Also, compression time (on max levels)
+can get far beyond zstd's in the negative way.
+
+## Compression To explain how compression works, let's consider running the following
+command: `lzmpo -e -i enwik9 -o compressed --pl 5,8,16 --mm 100,50,20 -T16 -k256 -a5
+-b20 --fse`
+
+The first thing that happens is `enwik9` being mmaped into the memory view. After
+this, an `encoder` class will be instantiated, and the mmaped file will be passed to
+it in order to load the bytes into the compressor. Only `1e9 - 32` bytes are
+considered for parsing, as the last 32 bytes are encoded as literals. This is done in
+order to remove slow branches from the decoder.
+
+After the file has been loaded, the encoder will start building the hash chains. At
+first, it will calculate hashes for data of size 5 (first prefix length in the `--pl`
+argument). To do this, 16 threads (as specified by `-T16`) will be created to process
+16 (= number of threads) sequential equally sized blocks of data. Each thread will
+calculate hashes for each position in its portion of the data, and store them for the
+next step.
+
+After hashes have been calculated, a single thread calculates the hash chain by
+maintaining a hash table (let's call it `head`) such that when processing position
+`i` we have `head[i] = most recent position j < i such that data at that position has
+the same hash as data at i`. After we set `head[i]`, we update `chains[0][i] =
+head[i]`, which means "in hash chain correspending to the prefix length 5 (which is
+at position 0 in the `--pl` list) data at `head[i]` has the same hash as at `i`".
+There are actually 2 types of hash tables that can be used here. First is
+`__gnu_pbds::gp_hash_table<uint32_t, uint32_t>` which would be used if we specified
+`-b0`. However, since we are dealing with `-b20`, a different structure is used. It
+has an array of 2^20 integers, each corresponding to a 20-bit-long hash. Basically,
+we truncate 32-bit hashes to just 20 bits, which saves space and increases speed, but
+decreases precision as more collisions will occur. Note: if we specified `-b32`, it
+would have the same effect as `-b0` in terms of collisions, but would generally be
+faster.
+
+The previous 2 steps will also be repeated for prefix lengths 8 and 16, resulting in
+total of 3 hash chains built.
+
+Now the encoder will being the actual parsing of the file. The file is split into 256
+(as specified by `-k256`) blocks, where each block will be processed by a separate of
+the 16 threads. This is done to improve performance, as in the worst case only 1
+threat will be left processing `1e9 / 256` bytes instead of `1e9 / 16`. Basically, we
+spend as much time utilizing all 16 threads as possible with higher `-k` values.
+
+Each block will calculate a separate stream of tokens, and those tokens will not be
+able to cross the boundaries of the blocks. In the worst case scenario, we will not
+see 255 great (of length 256 which is the max length of a match) matches crossing
+those boundaries, replacing them with literals, which is at most 32KiB wasted with
+literals instead of long matches. After all the tokens have been calculated, they
+will be merged into a single stream.
+
+Let's focus on a single block. DP is used to evaluate the best possible path (made of
+tokens) from the start to the end of the block. We decide which path is better by
+evaluating its cost, which is the sum of costs of all tokens that form that path.
+Cost of a token is evaluated differently for the first pass and the subsequent
+passes. For the first pass, cost is simply a guess. During the subsequent runs, cost
+of a token is calculated using the stream of tokens generated by the previous pass,
+which leads to much better compression ratio, but requires more time and each pass is
+a complete run of the parser.
+
+Progressing through the block, at each position the encoder calculates a sheet: an
+array which stores closest matches of length `i` for `i = 1..255`. To find such
+matches, an optimized function is run which will use the chain for prefix length 16
+and will find all matches of length 1..255 by jumping along the chain at most 20
+times (element of `--mm` which corresponds to the last prefix length) . Note that
+this iteration is very likely to result in a long match (>16 bytes). Next, same will
+be done using the chain for prefix length 8, but this time the length of a match will
+be limited to the range 1..15 and will jump only 50 times as the previous iteration
+would have found all longer matches (well, almost, but generally this is true). Same
+goes for prefix length 5.
+
+After the matches for each length (the sheet) have been collected, they are
+normalized (i.e. if a match of length 100 exists at distance 100, and a match of
+length 99 exists at distance 100000, we can just take the match of length 100, ignore
+the last byte, and it will be better since distance is smaller). Next, assuming
+encoder is at position i, it will try to improve the path to `i + len` for each
+`len=5..255` using `sheet[len]`. During testing I discovered that minimal match len 5
+works best with long files.
+
+After DP has been calculated, backtracking is run and a stream of tokens is created.
+The thread deallocates sheet, DP arrays, and everything else that was using in that
+block. After this, the thread can take another block and repeat.
+
+Once all blocks have been computed, the finalized stream of tokens is created and
+validated. Next, depending on the number of passes (`-a`), if the current pass is not
+the final one, tokens are used to improve the estimator of cost of a token.
+
+Basic estimator is a simple guessing model. Like in zstd, tokens will be later split
+into: controls (match, cache hit 0, cache hit 1, cache hit 2, literal), literals,
+length and distances. Distances are split into distance group and extra bits.
+Basically, distances are logarithmically binned, so that lower bins require fewer
+extra bits. Cost of a token returned by the basic estimator is: 1 for controll, 7 for
+literal, `log2(length) + 1` if a match is in the distance cache, `log2(length) + 1 +
+log2(distance group) + extra distance bits`.
+
+However, if we already completed the first pass, we can estimate this better. The
+estimator that is used for subsequent passes calculates entropy of a token based on
+what tokens were calculated previously. This is done for controls, literals,
+distances that are in cache, distances that are binned, length. Each pass
+recalculates entropy based on the results of the previous pass.
+
+The last step of compression is passing tokens through some entropy encoder. lzmpo
+supports multiple ones:
+- `--turborc` - Turbo-Range-Coder, RC, gives best ratio and worst performance.
+- `--turboans` - Turbo-Range-Coder, ANS, gives almost best ratio and good
+  performance.
+- `--fse` - finitestateentropy, FSE, good ratio and faster.
+- `--huf` - finitestateentropy, HUF, good ratio and even faster.
+- `--memcpy` - memcpy.....
+- `rans_static0` - rans\_static, r32x16b\_avx2 order0, great ratio and best
+  performance, decompression about 70-80% of zstd.
+- `rans_static` - rans\_static, r32x16b\_avx2 order1, bad ratio probably due to poor
+  precision.
+
+Each stream (controls, literals, distanc groups, distance extra bits, lengths) is
+encoded and written to the output file.
+
+## Decompression
+Decompression is highly efficient as almost no memory is used. For copying, efficient
+simd routine is used. Branches are minimized.
+

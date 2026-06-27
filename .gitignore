@@ -19,4 +19,5 @@ datasets/enwik9
 .zstd*
 .xz*
 project.txt
-.benchmarks*
+.benchmark*
+
