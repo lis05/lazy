@@ -14,10 +14,15 @@ else ifeq ($(MODE), size)
     CXXFLAGS := -Oz -ffunction-sections -fdata-sections -flto -fno-ident -fno-asynchronous-unwind-tables -march=native -std=c++23 -MMD -MP -Ithird_party/
     CFLAGS   := -Oz -ffunction-sections -fdata-sections -flto -fno-ident -fno-asynchronous-unwind-tables -std=gnu11 -Ithird_party/
     LDFLAGS  := -s -flto -Wl,--gc-sections
-else
+else ifeq ($(MODE), speed)
     CXXFLAGS := -O3 -ffunction-sections -fdata-sections -flto -fno-ident -fno-asynchronous-unwind-tables -march=native -std=c++23 -MMD -MP -Ithird_party/
     CFLAGS   := -O3 -ffunction-sections -fdata-sections -flto -fno-ident -fno-asynchronous-unwind-tables -march=native -std=gnu11 -Ithird_party/
     LDFLAGS  := -flto -Wl,--gc-sections
+else
+    CXXFLAGS := -O3 -ffunction-sections -fdata-sections -flto -fno-ident -fno-asynchronous-unwind-tables -march=x86-64-v3 -std=c++23 -MMD -MP -Ithird_party/
+    CFLAGS   := -O3 -ffunction-sections -fdata-sections -flto -fno-ident -fno-asynchronous-unwind-tables -march=x86-64-v3 -std=gnu11 -Ithird_party/
+    LDFLAGS  := -flto -Wl,--gc-sections
+
 endif
 
 TARGET := build/lzmpo

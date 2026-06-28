@@ -173,8 +173,8 @@ can set all parameters to custom values.
 
 Tested compressors: zstd -8, zstd -22, xz -5, xz -9, brotli -q9, brotli -q11
 
-These results were obtained on AMD Ryzen 7 260 with 32GB DDR5 5600MT/s RAM + 128GB
-swap space on ssd. Only `--rans_static0` was tested as it gives the best
+These results were obtained on AMD Ryzen 7 260 (w/  AVX512) with 32GB DDR5 5600MT/s
+RAM + 128GB swap space on ssd. Only `--rans_static0` was tested as it gives the best
 decompression speed, but with `--turborc` I remember reaching ratios such as
 `20.05%`.
 
@@ -493,5 +493,6 @@ by its author and me to fit lzmpo
 ## How to build
 
 Pull all dependencies into ./third\_party and run `make`. It should build without
-issues. To build an executable with minimal size, run `make MODE=size`.
+issues. To build an executable with minimal size, run `make MODE=size`. For speed,
+set mode to `speed`, and for compatibility with modern systems set to `release`.
 
