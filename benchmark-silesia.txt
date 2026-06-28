@@ -1,229 +1,248 @@
-# lzmpo - LZ77 multiple prefixes optimal compressor
 
-lzmpo is an experimental compressor built around the following heuristic: two longer
-strings are less likely to have the same hash than two shorter strings. It builds
-hashchains (linking positions with the same hash of the data) for several lengths of
-the hashed substring (called prefix) which cover the entire file. Due to this, better
-matches can be found quicker by searching along the hashchain built for the greatest
-prefix length. Another upside is that compression ratio gets better as the size of
-the input file grows, outperforming zstd on enwik9. Additionally, decompression speed
-stays at about 70-80% that of zstd, and memory usage is about 1.5\*N bytes where N is
-the size of the file.
+══════════════════════════════════════════════════════════════
+  dickens  (10,192,446 bytes)
+══════════════════════════════════════════════════════════════
+  [  1/192] zstd -18 ... ratio=28.103%  c=2.6 MB/s  d=646.2 MB/s
+  [  2/192] zstd -22 ... ratio=27.953%  c=2.4 MB/s  d=664.0 MB/s
+  [  3/192] xz -5 ... ratio=27.777%  c=2.3 MB/s  d=164.9 MB/s
+  [  4/192] xz -9 ... ratio=27.772%  c=2.3 MB/s  d=165.1 MB/s
+  [  5/192] brotli -q9 ... ratio=30.460%  c=7.7 MB/s  d=433.8 MB/s
+  [  6/192] brotli -q11 ... ratio=27.744%  c=0.8 MB/s  d=420.6 MB/s
+  [  7/192] lzmpo -0 ... ratio=32.940%  c=21.8 MB/s  d=446.7 MB/s
+  [  8/192] lzmpo -1 ... ratio=29.812%  c=10.0 MB/s  d=525.5 MB/s
+  [  9/192] lzmpo -2 ... ratio=29.102%  c=8.3 MB/s  d=556.8 MB/s
+  [ 10/192] lzmpo -3 ... ratio=28.711%  c=5.0 MB/s  d=554.5 MB/s
+  [ 11/192] lzmpo -4 ... ratio=28.395%  c=2.7 MB/s  d=593.8 MB/s
+  [ 12/192] lzmpo -5 ... ratio=28.393%  c=2.1 MB/s  d=563.6 MB/s
+  [ 13/192] lzmpo -6 ... ratio=28.390%  c=2.1 MB/s  d=583.1 MB/s
+  [ 14/192] lzmpo -7 ... ratio=28.306%  c=1.5 MB/s  d=582.6 MB/s
+  [ 15/192] lzmpo -8 ... ratio=28.274%  c=1.2 MB/s  d=595.1 MB/s
+  [ 16/192] lzmpo -9 ... ratio=28.274%  c=1.1 MB/s  d=596.6 MB/s
 
-However, the greatest downside is memory usage during compression, as each hashchain
-requires 4\*N bytes to be stored in memory. Also, compression time (on max levels)
-can get far beyond zstd's in the negative way.
+══════════════════════════════════════════════════════════════
+  mozilla  (51,220,480 bytes)
+══════════════════════════════════════════════════════════════
+  [ 17/192] zstd -18 ... ratio=29.546%  c=7.1 MB/s  d=862.9 MB/s
+  [ 18/192] zstd -22 ... ratio=29.117%  c=3.1 MB/s  d=603.8 MB/s
+  [ 19/192] xz -5 ... ratio=26.646%  c=7.8 MB/s  d=238.4 MB/s
+  [ 20/192] xz -9 ... ratio=26.111%  c=3.3 MB/s  d=129.8 MB/s
+  [ 21/192] brotli -q9 ... ratio=31.214%  c=3.5 MB/s  d=414.2 MB/s
+  [ 22/192] brotli -q11 ... ratio=27.083%  c=0.6 MB/s  d=334.6 MB/s
+  [ 23/192] lzmpo -0 ... ratio=33.537%  c=13.6 MB/s  d=400.1 MB/s
+  [ 24/192] lzmpo -1 ... ratio=32.841%  c=6.6 MB/s  d=426.6 MB/s
+  [ 25/192] lzmpo -2 ... ratio=32.574%  c=6.2 MB/s  d=443.7 MB/s
+  [ 26/192] lzmpo -3 ... ratio=32.442%  c=4.5 MB/s  d=434.7 MB/s
+  [ 27/192] lzmpo -4 ... ratio=32.194%  c=2.7 MB/s  d=447.4 MB/s
+  [ 28/192] lzmpo -5 ... ratio=32.178%  c=2.2 MB/s  d=443.4 MB/s
+  [ 29/192] lzmpo -6 ... ratio=32.171%  c=2.1 MB/s  d=442.6 MB/s
+  [ 30/192] lzmpo -7 ... ratio=32.158%  c=1.6 MB/s  d=445.0 MB/s
+  [ 31/192] lzmpo -8 ... ratio=32.152%  c=1.1 MB/s  d=447.4 MB/s
+  [ 32/192] lzmpo -9 ... ratio=32.147%  c=0.8 MB/s  d=448.9 MB/s
 
-## Compression
+══════════════════════════════════════════════════════════════
+  mr  (9,970,564 bytes)
+══════════════════════════════════════════════════════════════
+  [ 33/192] zstd -18 ... ratio=31.156%  c=4.5 MB/s  d=625.8 MB/s
+  [ 34/192] zstd -22 ... ratio=31.116%  c=2.8 MB/s  d=644.5 MB/s
+  [ 35/192] xz -5 ... ratio=27.602%  c=4.0 MB/s  d=114.9 MB/s
+  [ 36/192] xz -9 ... ratio=27.584%  c=3.7 MB/s  d=114.7 MB/s
+  [ 37/192] brotli -q9 ... ratio=31.863%  c=8.6 MB/s  d=371.1 MB/s
+  [ 38/192] brotli -q11 ... ratio=28.315%  c=0.7 MB/s  d=309.9 MB/s
+  [ 39/192] lzmpo -0 ... ratio=34.109%  c=15.3 MB/s  d=373.7 MB/s
+  [ 40/192] lzmpo -1 ... ratio=33.028%  c=8.5 MB/s  d=405.0 MB/s
+  [ 41/192] lzmpo -2 ... ratio=32.787%  c=7.8 MB/s  d=408.5 MB/s
+  [ 42/192] lzmpo -3 ... ratio=32.700%  c=5.2 MB/s  d=416.0 MB/s
+  [ 43/192] lzmpo -4 ... ratio=31.976%  c=3.1 MB/s  d=421.8 MB/s
+  [ 44/192] lzmpo -5 ... ratio=31.969%  c=2.7 MB/s  d=437.0 MB/s
+  [ 45/192] lzmpo -6 ... ratio=31.968%  c=2.6 MB/s  d=441.6 MB/s
+  [ 46/192] lzmpo -7 ... ratio=31.791%  c=1.9 MB/s  d=454.2 MB/s
+  [ 47/192] lzmpo -8 ... ratio=31.716%  c=1.5 MB/s  d=457.6 MB/s
+  [ 48/192] lzmpo -9 ... ratio=31.716%  c=1.3 MB/s  d=445.1 MB/s
 
-To explain how compression works, let's consider running the following command:
-`lzmpo -e -i enwik9 -o compressed --pl 5,8,16 --mm 100,50,20 -T16 -k256 -a5 -b20
---fse`
+══════════════════════════════════════════════════════════════
+  nci  (33,553,445 bytes)
+══════════════════════════════════════════════════════════════
+  [ 49/192] zstd -18 ... ratio=5.472%  c=6.2 MB/s  d=1706.0 MB/s
+  [ 50/192] zstd -22 ... ratio=4.708%  c=1.7 MB/s  d=1026.1 MB/s
+  [ 51/192] xz -5 ... ratio=6.049%  c=15.5 MB/s  d=543.8 MB/s
+  [ 52/192] xz -9 ... ratio=5.182%  c=6.2 MB/s  d=391.7 MB/s
+  [ 53/192] brotli -q9 ... ratio=5.727%  c=29.0 MB/s  d=995.3 MB/s
+  [ 54/192] brotli -q11 ... ratio=4.529%  c=0.9 MB/s  d=959.5 MB/s
+  [ 55/192] lzmpo -0 ... ratio=7.247%  c=23.8 MB/s  d=878.2 MB/s
+  [ 56/192] lzmpo -1 ... ratio=6.753%  c=17.0 MB/s  d=925.2 MB/s
+  [ 57/192] lzmpo -2 ... ratio=6.008%  c=14.2 MB/s  d=960.3 MB/s
+  [ 58/192] lzmpo -3 ... ratio=5.505%  c=9.3 MB/s  d=1046.6 MB/s
+  [ 59/192] lzmpo -4 ... ratio=5.221%  c=4.8 MB/s  d=998.1 MB/s
+  [ 60/192] lzmpo -5 ... ratio=5.172%  c=4.1 MB/s  d=997.0 MB/s
+  [ 61/192] lzmpo -6 ... ratio=5.120%  c=3.5 MB/s  d=1015.4 MB/s
+  [ 62/192] lzmpo -7 ... ratio=5.050%  c=2.3 MB/s  d=995.5 MB/s
+  [ 63/192] lzmpo -8 ... ratio=4.967%  c=1.1 MB/s  d=940.1 MB/s
+  [ 64/192] lzmpo -9 ... ratio=4.911%  c=0.6 MB/s  d=987.6 MB/s
 
-The first thing that happens is `enwik9` being mmaped into the memory view. After
-this, an `encoder` class will be instantiated, and the mmaped file will be passed to
-it in order to load the bytes into the compressor. Only `1e9 - 32` bytes are
-considered for parsing, as the last 32 bytes are encoded as literals. This is done in
-order to remove slow branches from the decoder.
+══════════════════════════════════════════════════════════════
+  ooffice  (6,152,192 bytes)
+══════════════════════════════════════════════════════════════
+  [ 65/192] zstd -18 ... ratio=42.199%  c=4.5 MB/s  d=478.9 MB/s
+  [ 66/192] zstd -22 ... ratio=42.184%  c=4.1 MB/s  d=449.0 MB/s
+  [ 67/192] xz -5 ... ratio=39.480%  c=4.0 MB/s  d=88.8 MB/s
+  [ 68/192] xz -9 ... ratio=39.446%  c=3.8 MB/s  d=92.0 MB/s
+  [ 69/192] brotli -q9 ... ratio=44.990%  c=7.1 MB/s  d=255.5 MB/s
+  [ 70/192] brotli -q11 ... ratio=40.292%  c=0.6 MB/s  d=209.7 MB/s
+  [ 71/192] lzmpo -0 ... ratio=47.470%  c=11.6 MB/s  d=288.1 MB/s
+  [ 72/192] lzmpo -1 ... ratio=46.758%  c=4.9 MB/s  d=283.6 MB/s
+  [ 73/192] lzmpo -2 ... ratio=46.594%  c=4.9 MB/s  d=293.4 MB/s
+  [ 74/192] lzmpo -3 ... ratio=46.520%  c=3.6 MB/s  d=313.9 MB/s
+  [ 75/192] lzmpo -4 ... ratio=46.310%  c=2.5 MB/s  d=307.3 MB/s
+  [ 76/192] lzmpo -5 ... ratio=46.301%  c=2.1 MB/s  d=307.5 MB/s
+  [ 77/192] lzmpo -6 ... ratio=46.299%  c=2.1 MB/s  d=293.7 MB/s
+  [ 78/192] lzmpo -7 ... ratio=46.298%  c=1.6 MB/s  d=303.3 MB/s
+  [ 79/192] lzmpo -8 ... ratio=46.294%  c=1.5 MB/s  d=307.2 MB/s
+  [ 80/192] lzmpo -9 ... ratio=46.293%  c=1.5 MB/s  d=304.0 MB/s
 
-After the file has been loaded, the encoder will start building the hash chains. At
-first, it will calculate hashes for data of size 5 (first prefix length in the `--pl`
-argument). To do this, 16 threads (as specified by `-T16`) will be created to process
-16 (= number of threads) sequential equally sized blocks of data. Each thread will
-calculate hashes for each position in its portion of the data, and store them for the
-next step.
+══════════════════════════════════════════════════════════════
+  osdb  (10,085,684 bytes)
+══════════════════════════════════════════════════════════════
+  [ 81/192] zstd -18 ... ratio=30.865%  c=4.0 MB/s  d=711.8 MB/s
+  [ 82/192] zstd -22 ... ratio=30.738%  c=3.4 MB/s  d=667.5 MB/s
+  [ 83/192] xz -5 ... ratio=28.464%  c=4.0 MB/s  d=133.9 MB/s
+  [ 84/192] xz -9 ... ratio=28.257%  c=3.5 MB/s  d=133.9 MB/s
+  [ 85/192] brotli -q9 ... ratio=30.821%  c=7.9 MB/s  d=406.9 MB/s
+  [ 86/192] brotli -q11 ... ratio=27.924%  c=0.9 MB/s  d=305.9 MB/s
+  [ 87/192] lzmpo -0 ... ratio=34.002%  c=14.9 MB/s  d=518.8 MB/s
+  [ 88/192] lzmpo -1 ... ratio=32.845%  c=7.8 MB/s  d=521.5 MB/s
+  [ 89/192] lzmpo -2 ... ratio=32.143%  c=7.1 MB/s  d=509.2 MB/s
+  [ 90/192] lzmpo -3 ... ratio=31.586%  c=4.7 MB/s  d=554.0 MB/s
+  [ 91/192] lzmpo -4 ... ratio=31.343%  c=2.9 MB/s  d=558.8 MB/s
+  [ 92/192] lzmpo -5 ... ratio=31.107%  c=2.4 MB/s  d=574.2 MB/s
+  [ 93/192] lzmpo -6 ... ratio=31.020%  c=2.3 MB/s  d=523.5 MB/s
+  [ 94/192] lzmpo -7 ... ratio=30.818%  c=1.7 MB/s  d=528.9 MB/s
+  [ 95/192] lzmpo -8 ... ratio=30.774%  c=1.3 MB/s  d=564.5 MB/s
+  [ 96/192] lzmpo -9 ... ratio=30.759%  c=1.2 MB/s  d=583.9 MB/s
 
-After hashes have been calculated, a single thread calculates the hash chain by
-maintaining a hash table (let's call it `head`) such that when processing position
-`i` we have `head[i] = most recent position j < i such that data at that position has
-the same hash as data at i`. After we set `head[i]`, we update `chains[0][i] =
-head[i]`, which means "in hash chain correspending to the prefix length 5 (which is
-at position 0 in the `--pl` list) data at `head[i]` has the same hash as at `i`".
-There are actually 2 types of hash tables that can be used here. First is
-`__gnu_pbds::gp_hash_table<uint32_t, uint32_t>` which would be used if we specified
-`-b0`. However, since we are dealing with `-b20`, a different structure is used. It
-has an array of 2^20 integers, each corresponding to a 20-bit-long hash. Basically,
-we truncate 32-bit hashes to just 20 bits, which saves space and increases speed, but
-decreases precision as more collisions will occur. Note: if we specified `-b32`, it
-would have the same effect as `-b0` in terms of collisions, but would generally be
-faster.
+══════════════════════════════════════════════════════════════
+  reymont  (6,627,202 bytes)
+══════════════════════════════════════════════════════════════
+  [ 97/192] zstd -18 ... ratio=20.375%  c=3.0 MB/s  d=669.9 MB/s
+  [ 98/192] zstd -22 ... ratio=20.348%  c=2.7 MB/s  d=590.6 MB/s
+  [ 99/192] xz -5 ... ratio=20.236%  c=3.2 MB/s  d=182.2 MB/s
+  [100/192] xz -9 ... ratio=19.875%  c=2.8 MB/s  d=191.3 MB/s
+  [101/192] brotli -q9 ... ratio=22.942%  c=12.7 MB/s  d=488.3 MB/s
+  [102/192] brotli -q11 ... ratio=20.101%  c=0.9 MB/s  d=495.2 MB/s
+  [103/192] lzmpo -0 ... ratio=26.282%  c=23.8 MB/s  d=491.0 MB/s
+  [104/192] lzmpo -1 ... ratio=23.437%  c=14.4 MB/s  d=550.6 MB/s
+  [105/192] lzmpo -2 ... ratio=22.293%  c=12.0 MB/s  d=546.0 MB/s
+  [106/192] lzmpo -3 ... ratio=21.481%  c=6.8 MB/s  d=543.9 MB/s
+  [107/192] lzmpo -4 ... ratio=21.168%  c=3.8 MB/s  d=629.4 MB/s
+  [108/192] lzmpo -5 ... ratio=21.113%  c=2.9 MB/s  d=592.2 MB/s
+  [109/192] lzmpo -6 ... ratio=21.097%  c=2.7 MB/s  d=602.2 MB/s
+  [110/192] lzmpo -7 ... ratio=21.010%  c=1.8 MB/s  d=593.3 MB/s
+  [111/192] lzmpo -8 ... ratio=20.960%  c=1.3 MB/s  d=611.5 MB/s
+  [112/192] lzmpo -9 ... ratio=20.944%  c=1.2 MB/s  d=553.7 MB/s
 
-The previous 2 steps will also be repeated for prefix lengths 8 and 16, resulting in
-total of 3 hash chains built.
+══════════════════════════════════════════════════════════════
+  samba  (21,606,400 bytes)
+══════════════════════════════════════════════════════════════
+  [113/192] zstd -18 ... ratio=18.189%  c=6.0 MB/s  d=1052.8 MB/s
+  [114/192] zstd -22 ... ratio=17.895%  c=2.5 MB/s  d=827.3 MB/s
+  [115/192] xz -5 ... ratio=17.948%  c=6.6 MB/s  d=214.1 MB/s
+  [116/192] xz -9 ... ratio=17.419%  c=5.2 MB/s  d=202.1 MB/s
+  [117/192] brotli -q9 ... ratio=19.231%  c=11.0 MB/s  d=607.7 MB/s
+  [118/192] brotli -q11 ... ratio=17.432%  c=1.0 MB/s  d=474.8 MB/s
+  [119/192] lzmpo -0 ... ratio=21.272%  c=16.2 MB/s  d=588.6 MB/s
+  [120/192] lzmpo -1 ... ratio=20.479%  c=9.0 MB/s  d=607.9 MB/s
+  [121/192] lzmpo -2 ... ratio=20.185%  c=8.4 MB/s  d=651.9 MB/s
+  [122/192] lzmpo -3 ... ratio=20.033%  c=5.9 MB/s  d=573.0 MB/s
+  [123/192] lzmpo -4 ... ratio=19.890%  c=3.4 MB/s  d=581.1 MB/s
+  [124/192] lzmpo -5 ... ratio=19.883%  c=2.8 MB/s  d=544.1 MB/s
+  [125/192] lzmpo -6 ... ratio=19.878%  c=2.7 MB/s  d=569.5 MB/s
+  [126/192] lzmpo -7 ... ratio=19.853%  c=2.0 MB/s  d=577.8 MB/s
+  [127/192] lzmpo -8 ... ratio=19.835%  c=1.6 MB/s  d=570.2 MB/s
+  [128/192] lzmpo -9 ... ratio=19.831%  c=1.4 MB/s  d=584.8 MB/s
 
-Now the encoder will begin the actual parsing of the file. The file is split into 256
-(as specified by `-k256`) blocks, where each block will be processed by a separate of
-the 16 threads. This is done to improve performance, as in the worst case only 1
-threat will be left processing `1e9 / 256` bytes instead of `1e9 / 16`. Basically, we
-spend as much time utilizing all 16 threads as possible with higher `-k` values.
+══════════════════════════════════════════════════════════════
+  sao  (7,251,944 bytes)
+══════════════════════════════════════════════════════════════
+  [129/192] zstd -18 ... ratio=69.004%  c=3.4 MB/s  d=518.7 MB/s
+  [130/192] zstd -22 ... ratio=68.955%  c=3.4 MB/s  d=517.6 MB/s
+  [131/192] xz -5 ... ratio=60.867%  c=2.6 MB/s  d=64.5 MB/s
+  [132/192] xz -9 ... ratio=60.881%  c=2.7 MB/s  d=65.0 MB/s
+  [133/192] brotli -q9 ... ratio=71.772%  c=3.1 MB/s  d=187.0 MB/s
+  [134/192] brotli -q11 ... ratio=63.239%  c=0.6 MB/s  d=174.0 MB/s
+  [135/192] lzmpo -0 ... ratio=73.393%  c=7.7 MB/s  d=269.3 MB/s
+  [136/192] lzmpo -1 ... ratio=72.482%  c=3.5 MB/s  d=275.4 MB/s
+  [137/192] lzmpo -2 ... ratio=72.382%  c=3.3 MB/s  d=261.5 MB/s
+  [138/192] lzmpo -3 ... ratio=72.346%  c=2.6 MB/s  d=270.3 MB/s
+  [139/192] lzmpo -4 ... ratio=71.927%  c=1.9 MB/s  d=269.1 MB/s
+  [140/192] lzmpo -5 ... ratio=71.927%  c=1.6 MB/s  d=271.8 MB/s
+  [141/192] lzmpo -6 ... ratio=71.927%  c=1.6 MB/s  d=297.4 MB/s
+  [142/192] lzmpo -7 ... ratio=71.889%  c=1.3 MB/s  d=283.0 MB/s
+  [143/192] lzmpo -8 ... ratio=71.884%  c=1.2 MB/s  d=271.3 MB/s
+  [144/192] lzmpo -9 ... ratio=71.884%  c=1.2 MB/s  d=269.9 MB/s
 
-Each block will calculate a separate stream of tokens, and those tokens will not be
-able to cross the boundaries of the blocks. In the worst case scenario, we will not
-see 255 great (of length 256 which is the max length of a match) matches crossing
-those boundaries, replacing them with literals, which is at most 32KiB wasted with
-literals instead of long matches. After all the tokens have been calculated, they
-will be merged into a single stream.
+══════════════════════════════════════════════════════════════
+  webster  (41,458,703 bytes)
+══════════════════════════════════════════════════════════════
+  [145/192] zstd -18 ... ratio=21.244%  c=2.6 MB/s  d=900.2 MB/s
+  [146/192] zstd -22 ... ratio=20.337%  c=1.4 MB/s  d=551.4 MB/s
+  [147/192] xz -5 ... ratio=21.725%  c=3.6 MB/s  d=246.0 MB/s
+  [148/192] xz -9 ... ratio=20.227%  c=1.6 MB/s  d=142.8 MB/s
+  [149/192] brotli -q9 ... ratio=22.967%  c=4.8 MB/s  d=372.3 MB/s
+  [150/192] brotli -q11 ... ratio=20.330%  c=0.7 MB/s  d=359.0 MB/s
+  [151/192] lzmpo -0 ... ratio=24.677%  c=19.7 MB/s  d=504.2 MB/s
+  [152/192] lzmpo -1 ... ratio=22.411%  c=10.3 MB/s  d=527.7 MB/s
+  [153/192] lzmpo -2 ... ratio=21.554%  c=8.0 MB/s  d=548.4 MB/s
+  [154/192] lzmpo -3 ... ratio=20.987%  c=4.8 MB/s  d=534.9 MB/s
+  [155/192] lzmpo -4 ... ratio=20.705%  c=2.5 MB/s  d=550.6 MB/s
+  [156/192] lzmpo -5 ... ratio=20.635%  c=2.1 MB/s  d=534.3 MB/s
+  [157/192] lzmpo -6 ... ratio=20.611%  c=1.9 MB/s  d=549.4 MB/s
+  [158/192] lzmpo -7 ... ratio=20.538%  c=1.3 MB/s  d=534.4 MB/s
+  [159/192] lzmpo -8 ... ratio=20.484%  c=0.8 MB/s  d=551.7 MB/s
+  [160/192] lzmpo -9 ... ratio=20.454%  c=0.6 MB/s  d=554.0 MB/s
 
-Let's focus on a single block. DP is used to evaluate the best possible path (made of
-tokens) from the start to the end of the block. We decide which path is better by
-evaluating its cost, which is the sum of costs of all tokens that form that path.
-Cost of a token is evaluated differently for the first pass and the subsequent
-passes. For the first pass, cost is simply a guess. During the subsequent runs, cost
-of a token is calculated using the stream of tokens generated by the previous pass,
-which leads to much better compression ratio, but requires more time and each pass is
-a complete run of the parser.
+══════════════════════════════════════════════════════════════
+  x-ray  (8,474,240 bytes)
+══════════════════════════════════════════════════════════════
+  [161/192] zstd -18 ... ratio=60.622%  c=2.9 MB/s  d=422.4 MB/s
+  [162/192] zstd -22 ... ratio=60.534%  c=2.5 MB/s  d=421.1 MB/s
+  [163/192] xz -5 ... ratio=52.943%  c=2.7 MB/s  d=59.1 MB/s
+  [164/192] xz -9 ... ratio=52.983%  c=2.7 MB/s  d=59.1 MB/s
+  [165/192] brotli -q9 ... ratio=63.067%  c=3.1 MB/s  d=191.5 MB/s
+  [166/192] brotli -q11 ... ratio=55.259%  c=0.5 MB/s  d=166.8 MB/s
+  [167/192] lzmpo -0 ... ratio=64.060%  c=10.0 MB/s  d=248.7 MB/s
+  [168/192] lzmpo -1 ... ratio=63.873%  c=3.9 MB/s  d=260.8 MB/s
+  [169/192] lzmpo -2 ... ratio=63.873%  c=3.8 MB/s  d=264.3 MB/s
+  [170/192] lzmpo -3 ... ratio=63.873%  c=2.7 MB/s  d=276.4 MB/s
+  [171/192] lzmpo -4 ... ratio=62.846%  c=1.9 MB/s  d=283.5 MB/s
+  [172/192] lzmpo -5 ... ratio=62.846%  c=1.6 MB/s  d=285.3 MB/s
+  [173/192] lzmpo -6 ... ratio=62.846%  c=1.6 MB/s  d=276.8 MB/s
+  [174/192] lzmpo -7 ... ratio=62.782%  c=1.3 MB/s  d=274.5 MB/s
+  [175/192] lzmpo -8 ... ratio=62.770%  c=1.3 MB/s  d=274.3 MB/s
+  [176/192] lzmpo -9 ... ratio=62.770%  c=1.2 MB/s  d=278.3 MB/s
 
-Progressing through the block, at each position the encoder calculates a sheet: an
-array which stores closest matches of length `i` for `i = 1..255`. To find such
-matches, an optimized function is run which will use the chain for prefix length 16
-and will find all matches of length 1..255 by jumping along the chain at most 20
-times (element of `--mm` which corresponds to the last prefix length) . Note that
-this iteration is very likely to result in a long match (>16 bytes). Next, same will
-be done using the chain for prefix length 8, but this time the length of a match will
-be limited to the range 1..15 and will jump only 50 times as the previous iteration
-would have found all longer matches (well, almost, but generally this is true). Same
-goes for prefix length 5.
+══════════════════════════════════════════════════════════════
+  xml  (5,345,280 bytes)
+══════════════════════════════════════════════════════════════
+  [177/192] zstd -18 ... ratio=8.703%  c=7.3 MB/s  d=765.1 MB/s
+  [178/192] zstd -22 ... ratio=8.450%  c=2.4 MB/s  d=760.2 MB/s
+  [179/192] xz -5 ... ratio=9.064%  c=10.5 MB/s  d=292.7 MB/s
+  [180/192] xz -9 ... ratio=8.480%  c=7.6 MB/s  d=282.3 MB/s
+  [181/192] brotli -q9 ... ratio=8.972%  c=34.1 MB/s  d=539.6 MB/s
+  [182/192] brotli -q11 ... ratio=8.055%  c=1.1 MB/s  d=561.1 MB/s
+  [183/192] lzmpo -0 ... ratio=10.853%  c=19.8 MB/s  d=674.5 MB/s
+  [184/192] lzmpo -1 ... ratio=10.336%  c=12.1 MB/s  d=666.5 MB/s
+  [185/192] lzmpo -2 ... ratio=9.769%  c=10.4 MB/s  d=703.7 MB/s
+  [186/192] lzmpo -3 ... ratio=9.559%  c=8.3 MB/s  d=695.5 MB/s
+  [187/192] lzmpo -4 ... ratio=9.383%  c=4.7 MB/s  d=747.8 MB/s
+  [188/192] lzmpo -5 ... ratio=9.348%  c=4.1 MB/s  d=671.2 MB/s
+  [189/192] lzmpo -6 ... ratio=9.325%  c=3.9 MB/s  d=664.7 MB/s
+  [190/192] lzmpo -7 ... ratio=9.304%  c=2.8 MB/s  d=653.2 MB/s
+  [191/192] lzmpo -8 ... ratio=9.259%  c=2.1 MB/s  d=628.5 MB/s
+  [192/192] lzmpo -9 ... ratio=9.228%  c=1.9 MB/s  d=697.8 MB/s
 
-After the matches for each length (the sheet) have been collected, they are
-normalized (i.e. if a match of length 100 exists at distance 100, and a match of
-length 99 exists at distance 100000, we can just take the match of length 100, ignore
-the last byte, and it will be better since distance is smaller). Next, assuming
-encoder is at position i, it will try to improve the path to `i + len` for each
-`len=5..255` using `sheet[len]`. During testing I discovered that minimal match len 5
-works best with long files.
 
-After DP has been calculated, backtracking is run and a stream of tokens is created.
-The thread deallocates sheet, DP arrays, and everything else that was using in that
-block. After this, the thread can take another block and repeat.
-
-Once all blocks have been computed, the finalized stream of tokens is created and
-validated. Next, depending on the number of passes (`-a`), if the current pass is not
-the final one, tokens are used to improve the estimator of cost of a token.
-
-Basic estimator is a simple guessing model. Like in zstd, tokens will be later split
-into: controls (match, cache hit 0, cache hit 1, cache hit 2, literal), literals,
-length and distances. Distances are split into distance group and extra bits.
-Basically, distances are logarithmically binned, so that lower bins require fewer
-extra bits. Cost of a token returned by the basic estimator is: 1 for controll, 7 for
-literal, `log2(length) + 1` if a match is in the distance cache, `log2(length) + 1 +
-log2(distance group) + extra distance bits`.
-
-However, if we already completed the first pass, we can estimate this better. The
-estimator that is used for subsequent passes calculates entropy of a token based on
-what tokens were calculated previously. This is done for controls, literals,
-distances that are in cache, distances that are binned, length. Each pass
-recalculates entropy based on the results of the previous pass.
-
-The last step of compression is passing tokens through some entropy encoder. lzmpo
-supports multiple ones:
-- `--turborc` - Turbo-Range-Coder, RC, gives best ratio and worst performance.
-- `--turboans` - Turbo-Range-Coder, ANS, gives almost best ratio and good
-  performance.
-- `--fse` - finitestateentropy, FSE, good ratio and faster.
-- `--huf` - finitestateentropy, HUF, good ratio and even faster.
-- `--memcpy` - memcpy.....
-- `rans_static0` - rans\_static, r32x16b\_avx2 order0, great ratio and best
-  performance, decompression about 70-80% of zstd.
-- `rans_static` - rans\_static, r32x16b\_avx2 order1, bad ratio probably due to poor
-  precision.
-
-Each stream (controls, literals, distanc groups, distance extra bits, lengths) is
-encoded and written to the output file.
-
-## Decompression
-
-Decompression is highly efficient as almost no memory is used.For copying, efficient
-simd routine is used.Branches are minimized.
-
-## Memory usage
-
-During compression, memory usage is about `4*N*M + 8*N/K*T + 4*N/K*T + 4*N/K*T +
-12*N/K*T` = `4*N*M + 28*N/K*T` bytes where N is the input file size, M is the number
-of prefix lengths, K is the number of blocks, T is the number of threads.
-
-Additionally, if `-b` is set to `0 < X <= 32`, exactly `4*2^X` bytes will be used by
-the hash table.Otherwise, if its set to 0, it will use at most as many bytes as when
-`-b` is set to `log2(N)`
-
-## Compression levels
-
-These were created purely on my intuition and some prior testing.
-
-- `-0`  Same as `-T<supported threads> -k256 --pl 5 --mm 5 -a1`
-- `-1`  Same as `-T<supported threads> -k256 --pl 5,6,8 --mm 20,10,5 -a1`
-- `-2`  Same as `-T<supported threads> -k256 --pl 5,6,8 --mm 100,50,20 -a1`
-- `-3`  Same as `-T<supported threads> -k256 --pl 5,6,8,12 --mm 200,100,70,50 -a1`
-- `-4`  Same as `-T<supported threads> -k256 --pl 5,6,8,12,16 --mm 200,100,70,50,40
-  -a2`
-- `-5`  Same as `-T<supported threads> -k256 --pl 5,6,8,12,16,20 --mm
-  300,150,90,70,50,40 -a2`
-- `-6`  Same as `-T<supported threads> -k256 --pl 5,6,8,12,16,20 --mm
-  400,250,150,100,80,60 -a2`
-- `-7`  Same as `-T<supported threads> -k256 --pl 5,6,8,12,16,20,24 --mm
-  500,300,200,150,100,70,40 -a3`
-- `-8`  Same as `-T<supported threads> -k256 --pl 5,6,8,12,16,20,24 --mm
-  1000,800,600,400,200,100,100 -a4`
-- `-9` Same as `-T<supported threads> -k256 --pl 5,6,8,12,16,20,24 --mm
-  5000,3000,2000,1500,800,500,300 -a4`
-
-Parameters such as `-b` are not set by any level. Also, if no level is specified, you
-can set all parameters to custom values.
-
-## Benchmarks
-
-Tested compressors: zstd -8, zstd -22, xz -5, xz -9, brotli -q9, brotli -q11
-
-These results were obtained on AMD Ryzen 7 260 with 32GB DDR5 5600MT/s RAM + 128GB
-swap space on ssd. Only `--rans_static0` was tested as it gives the best
-decompression speed, but with `--turborc` I remember reaching ratios such as
-`20.05%`.
-
-All compressors were tested with 16 threads (except brotli). Decompression is
-single-threaded in all 4 compressors. Decompression was executed 5 times and the
-results are average of all those 5 runs.
-
-```
-File: enwik9
-────  ───────────  ─────────  ────────────  ────────  ────────────  ────────
-Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
-────  ───────────  ─────────  ────────────  ────────  ────────────  ────────
-1     lzmpo -9     20.40550%  0.18          51312.9   495.27        1559.9  
-2     lzmpo -8     20.42281%  0.27          51312.9   496.24        1560.8  
-3     lzmpo -7     20.46996%  0.43          51312.9   499.47        1561.8  
-4     lzmpo -6     20.53418%  0.76          47498.2   507.15        1562.3  
-5     lzmpo -5     20.55473%  0.86          47498.2   477.80        1563.1  
-6     lzmpo -4     20.60857%  1.44          32880.9   500.05        1565.2  
-7     lzmpo -3     20.99710%  2.66          29066.2   485.98        1578.7  
-8     zstd -22     21.37212%  1.76          8669.9    638.34        215.7   
-9     xz -9        21.56742%  5.36          5653.8    466.15        1528.2  
-10    lzmpo -2     22.20778%  5.13          20040.4   465.42        1632.5  
-11    brotli -q11  22.33457%  0.58          247.0     321.60        22.5    
-12    lzmpo -1     23.20203%  8.16          20119.5   454.98        1677.4  
-13    xz -5        23.68271%  19.21         3729.1    1047.92       1137.3  
-14    zstd -18     23.95552%  11.59         1698.5    969.48        151.4   
-15    brotli -q9   25.17618%  3.68          128.6     349.06        22.8    
-16    lzmpo -0     26.13254%  16.88         12858.7   435.32        1827.6 
-
-File: enwik8
-────  ───────────  ─────────  ────────────  ────────  ────────────  ────────
-Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
-────  ───────────  ─────────  ────────────  ────────  ────────────  ────────
-1     xz -9        24.86525%  1.09          1137.7    108.53        199.7   
-2     zstd -22     25.27247%  1.05          7258.7    474.99        182.9   
-3     lzmpo -9     25.48685%  0.47          6563.8    453.68        189.1   
-4     lzmpo -8     25.49408%  0.58          6563.8    462.17        189.1   
-5     lzmpo -7     25.52564%  0.88          6563.8    443.51        189.1   
-6     lzmpo -6     25.58249%  1.36          6182.3    439.21        189.1   
-7     lzmpo -5     25.58834%  1.47          6182.3    466.65        189.1   
-8     lzmpo -4     25.60556%  1.84          5800.9    451.11        189.2   
-9     brotli -q11  25.74200%  0.56          235.9     268.97        22.4    
-10    lzmpo -3     25.92686%  3.36          3783.8    443.78        190.0   
-11    lzmpo -2     26.71511%  5.60          3266.3    436.21        193.7   
-12    xz -5        26.80511%  6.99          860.8     431.80        193.8   
-13    zstd -18     27.33398%  5.09          907.4     825.89        151.4   
-14    lzmpo -1     27.55053%  7.68          2986.3    422.60        197.6   
-15    brotli -q9   28.88779%  3.08          128.6     313.92        22.8    
-16    lzmpo -0     30.34589%  16.88         2195.6    403.04        212.4 
+══════════════════════════════════════════════════════════════
+  RESULTS
+══════════════════════════════════════════════════════════════
 
 File: dickens
 ────  ───────────  ─────────  ────────────  ────────  ────────────  ────────
@@ -476,22 +495,4 @@ Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 14    lzmpo -2     9.76901%   10.44         1694.3    703.72        22.6    
 15    lzmpo -1     10.33596%  12.09         1934.3    666.51        22.7    
 16    lzmpo -0     10.85320%  19.79         1272.0    674.54        22.8    
-```
-
-## Used libraries
-1. [a5hash](https://github.com/avaneev/a5hash) for fast hashing
-2. [Turbo-Range-Coder](https://github.com/powturbo/Turbo-Range-Coder) for `--turborc`
-and `--turboans`
-3. [finitestateentropy](https://github.com/cyan4973/finitestateentropy) for `--fse`
-and `--huf`
-4. [rans_static](https://github.com/jkbonfield/rans_static) for `--rans_static0` and
-`--rans_static1`
-5. [CLI11](https://github.com/cliutils/cli11) for CLI
-6. [misacpy](https://github.com/welcome-to-the-sunny-side/misacpy) which was modified
-by its author and me to fit lzmpo
-
-## How to build
-
-Pull all dependencies into ./third\_party and run `make`. It should build without
-issues. To build an executable with minimal size, run `make MODE=size`.
 

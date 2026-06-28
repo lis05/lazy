@@ -20,4 +20,4 @@ datasets/enwik9
 .xz*
 project.txt
 .benchmark*
-
+.datasets*
