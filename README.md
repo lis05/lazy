@@ -174,9 +174,8 @@ can set all parameters to custom values.
 Tested compressors: zstd -8, zstd -22, xz -5, xz -9, brotli -q9, brotli -q11
 
 These results were obtained on AMD Ryzen 7 260 (w/  AVX512) with 32GB DDR5 5600MT/s
-RAM + 128GB swap space on ssd. Only `--rans_static0` was tested as it gives the best
-decompression speed, but with `--turborc` I remember reaching ratios such as
-`20.05%`.
+RAM + 128GB swap space on ssd. `lzmpo -9rc` is the same as `lzmpo -9` but with
+`--turborc` turned on for maximal ratio.
 
 All compressors were tested with 16 threads (except brotli). Decompression is
 single-threaded in all 4 compressors. Decompression was executed 5 times and the
@@ -187,6 +186,7 @@ File: enwik9
 ────  ───────────  ─────────  ────────────  ────────  ────────────  ────────
 Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 ────  ───────────  ─────────  ────────────  ────────  ────────────  ────────
+*     lzmpo -9rc   20.07113%  0.18          51312.9   78.93         1556.8
 1     lzmpo -9     20.40550%  0.18          51312.9   495.27        1559.9  
 2     lzmpo -8     20.42281%  0.27          51312.9   496.24        1560.8  
 3     lzmpo -7     20.46996%  0.43          51312.9   499.47        1561.8  
@@ -209,6 +209,7 @@ File: enwik8
 Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 ────  ───────────  ─────────  ────────────  ────────  ────────────  ────────
 1     xz -9        24.86525%  1.09          1137.7    108.53        199.7   
+*     lzmpo -9rc   25.04109%  0.46          6563.8    55.71         188.8 
 2     zstd -22     25.27247%  1.05          7258.7    474.99        182.9   
 3     lzmpo -9     25.48685%  0.47          6563.8    453.68        189.1   
 4     lzmpo -8     25.49408%  0.58          6563.8    462.17        189.1   
@@ -232,6 +233,7 @@ Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 1     brotli -q11  27.74385%  0.78          215.7     420.55        21.9    
 2     xz -9        27.77167%  2.27          1137.7    165.05        93.1    
 3     xz -5        27.77688%  2.34          221.7     164.87        37.1    
+*     lzmpo -9rc   27.91625%  1.02          1569.1    54.22         34.8  
 4     zstd -22     27.95274%  2.36          1240.9    664.02        151.4   
 5     zstd -18     28.10278%  2.56          631.4     646.20        151.4   
 6     lzmpo -9     28.27396%  1.14          1633.2    596.65        34.7    
@@ -255,6 +257,7 @@ Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 3     brotli -q11  27.08343%  0.57          254.5     334.57        27.4    
 4     zstd -22     29.11749%  3.08          3929.6    603.84        151.4   
 5     zstd -18     29.54596%  7.09          762.0     862.91        151.4   
+*     lzmpo -9rc   29.62109%  0.77          3454.1    31.87         115.8
 6     brotli -q9   31.21380%  3.50          130.4     414.21        27.7    
 7     lzmpo -9     32.14679%  0.84          3375.9    448.85        116.9   
 8     lzmpo -8     32.15191%  1.15          3375.9    447.43        116.9   
@@ -274,6 +277,7 @@ Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 1     xz -9        27.58400%  3.75          1137.7    114.65        92.8    
 2     xz -5        27.60157%  3.99          221.7     114.86        36.8    
 3     brotli -q11  28.31471%  0.74          228.7     309.95        22.1    
+*     lzmpo -9rc   30.50191%  1.33          1918.6    43.21         35.2  
 4     zstd -22     31.11561%  2.84          1240.9    644.51        151.4   
 5     zstd -18     31.15615%  4.54          631.4     625.84        151.4   
 6     lzmpo -8     31.71621%  1.52          1562.6    457.55        35.2    
@@ -293,6 +297,7 @@ File: nci
 Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 ────  ───────────  ─────────  ────────────  ────────  ────────────  ────────
 1     brotli -q11  4.52939%   0.89          237.8     959.52        21.9    
+*     lzmpo -9rc   4.66588%   0.67          2839.8    203.77        53.3 
 2     zstd -22     4.70767%   1.70          2137.1    1026.09       151.4   
 3     lzmpo -9     4.91105%   0.64          2683.8    987.64        53.3    
 4     lzmpo -8     4.96652%   1.13          2259.8    940.12        53.4    
@@ -318,6 +323,7 @@ Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 3     brotli -q11  40.29222%  0.59          127.2     209.69        14.8    
 4     zstd -22     42.18425%  4.07          696.6     448.97        151.4   
 5     zstd -18     42.19883%  4.53          631.4     478.86        151.4   
+*     lzmpo -9rc   43.21520%  1.27          1901.7    22.66         30.5   
 6     brotli -q9   44.98998%  7.07          78.8      255.49        14.8    
 7     lzmpo -9     46.29252%  1.47          1431.2    304.00        30.6    
 8     lzmpo -8     46.29412%  1.50          1501.7    307.15        30.6    
@@ -337,6 +343,7 @@ Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 1     brotli -q11  27.92352%  0.86          232.2     305.87        21.9    
 2     xz -9        28.25704%  3.49          1137.7    133.86        93.0    
 3     xz -5        28.46443%  3.98          221.7     133.94        37.0    
+*     lzmpo -9rc   29.44729%  1.07          2100.0    33.47         34.5    
 4     zstd -22     30.73787%  3.43          1240.9    667.48        151.4   
 5     lzmpo -9     30.75857%  1.19          2310.0    583.86        34.5    
 6     lzmpo -8     30.77433%  1.31          1810.0    564.53        34.5    
@@ -358,6 +365,7 @@ Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 1     xz -9        19.87505%  2.77          1137.7    191.29        88.2    
 2     brotli -q11  20.10136%  0.87          126.8     495.19        13.9    
 3     xz -5        20.23563%  3.17          221.7     182.17        32.3    
+*     lzmpo -9rc   20.28809%  1.03          1400.8    64.25         26.6 
 4     zstd -22     20.34829%  2.67          696.6     590.64        151.4   
 5     zstd -18     20.37525%  2.96          631.4     669.90        151.4   
 6     lzmpo -9     20.94448%  1.17          1852.4    553.69        26.5    
@@ -378,6 +386,7 @@ Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 ────  ───────────  ─────────  ────────────  ────────  ────────────  ────────
 1     xz -9        17.41902%  5.19          1137.7    202.11        104.9   
 2     brotli -q11  17.43159%  0.98          248.8     474.82        23.2    
+*     lzmpo -9rc   17.54700%  1.41          2424.6    52.30         49.7  
 3     zstd -22     17.89463%  2.53          2137.1    827.29        151.4   
 4     xz -5        17.94783%  6.63          221.7     214.11        49.0    
 5     zstd -18     18.18862%  5.97          631.4     1052.78       151.4   
@@ -400,6 +409,7 @@ Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 1     xz -5        60.86655%  2.61          221.7     64.55         35.8    
 2     xz -9        60.88133%  2.70          1137.7    65.03         91.8    
 3     brotli -q11  63.23948%  0.59          137.9     174.00        14.1    
+*     lzmpo -9rc   68.63543%  1.09          2062.2    13.01         37.9
 4     zstd -22     68.95497%  3.45          696.6     517.56        151.4   
 5     zstd -18     69.00397%  3.36          631.4     518.71        151.4   
 6     brotli -q9   71.77238%  3.09          70.3      187.05        18.2    
@@ -419,6 +429,7 @@ File: webster
 Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 ────  ───────────  ─────────  ────────────  ────────  ────────────  ────────
 1     xz -9        20.22706%  1.56          1137.7    142.79        128.2   
+*     lzmpo -9rc   20.30834%  0.56          2925.5    68.83         81.6   
 2     brotli -q11  20.33005%  0.67          231.7     359.02        21.9    
 3     zstd -22     20.33745%  1.42          3929.6    551.43        151.4   
 4     lzmpo -9     20.45392%  0.57          3043.5    554.01        81.5    
@@ -442,6 +453,7 @@ Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 1     xz -5        52.94261%  2.66          221.7     59.14         37.0    
 2     xz -9        52.98264%  2.66          1137.7    59.08         93.0    
 3     brotli -q11  55.25868%  0.54          232.7     166.77        22.5    
+*     lzmpo -9rc   60.39444%  1.14          1597.5    19.40         40.6 
 4     zstd -22     60.53437%  2.54          1240.9    421.12        151.4   
 5     zstd -18     60.62243%  2.90          631.4     422.45        151.4   
 6     lzmpo -8     62.77015%  1.25          1896.3    274.32        40.7    
@@ -461,6 +473,7 @@ File: xml
 Rank  Compressor   Ratio      C.Speed MB/s  C.Mem MB  D.Speed MB/s  D.Mem MB
 ────  ───────────  ─────────  ────────────  ────────  ────────────  ────────
 1     brotli -q11  8.05507%   1.14          104.6     561.12        14.1    
+*     lzmpo -9rc   8.37810%   1.83          1475.4    114.97        21.4 
 2     zstd -22     8.44977%   2.36          696.6     760.23        151.4   
 3     xz -9        8.47978%   7.63          1137.7    282.28        86.2    
 4     zstd -18     8.70256%   7.31          631.4     765.11        151.4   
