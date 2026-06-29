@@ -1,7 +1,11 @@
 # lzmpo - LZ77 multiple prefixes optimal compressor
 
-lzmpo is an experimental compressor built around the following heuristic: two longer
-strings are less likely to have the same hash than two shorter strings. It builds
+lzmpo is an experimental compressor built around the following idea: when
+looking for a match to, say, string "abc123456", the parser will find many places
+where data starts with "abcX", such that X is not "1", and very few places where data
+starts with "abc123".
+
+It builds
 hashchains (linking positions with the same hash of the data) for several lengths of
 the hashed substring (called prefix) which cover the entire file. Due to this, better
 matches can be found quicker by searching along the hashchain built for the greatest
