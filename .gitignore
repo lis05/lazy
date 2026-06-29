@@ -21,3 +21,4 @@ datasets/enwik9
 project.txt
 .benchmark*
 datasets*
+benchmark-*

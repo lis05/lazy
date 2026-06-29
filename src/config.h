@@ -14,7 +14,7 @@ class config {
 public:
     static constexpr uint32_t    min_match_length = 5;
     static constexpr uint32_t    max_match_length = 255;
-    static constexpr std::string version = "v1.0.0";
+    static constexpr std::string version = "v1.0.1";
 
     static std::vector<uint32_t> max_matches;
     static std::vector<uint32_t> prefix_lengths;

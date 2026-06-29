@@ -254,7 +254,7 @@ void encoder::load(const std::byte *from, uint32_t count) {
         throw std::runtime_error("File is incompressible");
     }
     bytes_loaded = count - padding;
-    data.resize(count);
+    data.resize(count + 256); // + 256 since process() ignores file size
     std::memcpy(data.data(), from, count);
 }
 

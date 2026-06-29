@@ -113,7 +113,7 @@ static void compress_vect(const auto& vect, auto& res) {
 
 static void decompress_vect(const std::byte* from, uint32_t bytes, std::byte* to,
                             uint32_t to_size) {
-    if (to_size == 1) {
+    if (to_size == 0) {
         return;
     }
     std::byte flag = from[0];
@@ -344,6 +344,8 @@ std::pair<uint64_t, streams> read_block(const std::byte* ptr) {
                                  100.0 * dist_below_32 / h.n_dist);
         std::cout << "=============================\n";
     }
+
+    std::free(dist);
 
     res.n_controls = h.n_control;
     res.controls = control;

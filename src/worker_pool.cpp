@@ -32,5 +32,10 @@ worker_pool::~worker_pool() {
         std::lock_guard lock(queue_mutex);
         stop = true;
     }
+
     cv.notify_all();
+    for (auto &w: workers) {
+        w.request_stop();
+        w.join();
+    }
 }
