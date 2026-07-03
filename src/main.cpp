@@ -159,6 +159,7 @@ public:
 };
 
 int main(int argc, char **argv) {
+    uint32_t cores = std::thread::hardware_concurrency();
     dist_bins::precalc();
 
     CLI::App app("LZ77 multiple prefixes optimal compressor",
@@ -186,33 +187,40 @@ int main(int argc, char **argv) {
     app.add_option("-a", config::passes, "How many passes to do");
     app.add_option("-T", config::threads, "How many threads to use");
     app.add_flag("-0", config::level[0],
-                 "Same as -T<supported threads> -k256 --pl 5 --mm 5 -a1");
-    app.add_flag("-1", config::level[1],
-                 "Same as -T<supported threads> -k256 --pl 5,6,8 --mm 20,10,5 -a1");
+                 "Same as -T" + std::to_string(cores) + " -k256 --pl 5 --mm 5 -a1");
+    app.add_flag(
+        "-1", config::level[1],
+        "Same as -T" + std::to_string(cores) + " -k256 --pl 5,6,8 --mm 20,10,5 -a1");
     app.add_flag(
         "-2", config::level[2],
-        "Same as -T<supported threads> -k256 --pl 5,6,8 --mm 100,50,20 -a1");
-    app.add_flag(
-        "-3", config::level[3],
-        "Same as -T<supported threads> -k256 --pl 5,6,8,12 --mm 200,100,70,50 -a1");
+        "Same as -T" + std::to_string(cores) + " -k256 --pl 5,6,8 --mm 100,50,20 -a1");
+    app.add_flag("-3", config::level[3],
+                 "Same as -T" + std::to_string(cores) +
+                     " -k256 --pl 5,6,8,12 --mm 200,100,70,50 -a1");
     app.add_flag("-4", config::level[4],
-                 "Same as -T<supported threads> -k256 --pl 5,6,8,12,16 --mm "
-                 "200,100,70,50,40 -a2");
+                 "Same as -T" + std::to_string(cores) +
+                     " -k256 --pl 5,6,8,12,16 --mm "
+                     "200,100,70,50,40 -a2");
     app.add_flag("-5", config::level[5],
-                 "Same as -T<supported threads> -k256 --pl 5,6,8,12,16,20 --mm "
-                 "300,150,90,70,50,40 -a2");
+                 "Same as -T" + std::to_string(cores) +
+                     " -k256 --pl 5,6,8,12,16,20 --mm "
+                     "300,150,90,70,50,40 -a2");
     app.add_flag("-6", config::level[6],
-                 "Same as -T<supported threads> -k256 --pl 5,6,8,12,16,20 --mm "
-                 "400,250,150,100,80,60 -a2");
+                 "Same as -T" + std::to_string(cores) +
+                     " -k256 --pl 5,6,8,12,16,20 --mm "
+                     "400,250,150,100,80,60 -a2");
     app.add_flag("-7", config::level[7],
-                 "Same as -T<supported threads> -k256 --pl 5,6,8,12,16,20,24 --mm "
-                 "500,300,200,150,100,70,40 -a3");
+                 "Same as -T" + std::to_string(cores) +
+                     " -k256 --pl 5,6,8,12,16,20,24 --mm "
+                     "500,300,200,150,100,70,40 -a3");
     app.add_flag("-8", config::level[8],
-                 "Same as -T<supported threads> -k256 --pl 5,6,8,12,16,20,24 --mm "
-                 "1000,800,600,400,200,100,100 -a4");
+                 "Same as -T" + std::to_string(cores) +
+                     " -k256 --pl 5,6,8,12,16,20,24 --mm "
+                     "1000,800,600,400,200,100,100 -a4");
     app.add_flag("-9", config::level[9],
-                 "Same as -T<supported threads> -k256 --pl 5,6,8,12,16,20,24 --mm "
-                 "5000,3000,2000,1500,800,500,300 -a4");
+                 "Same as -T" + std::to_string(cores) +
+                     " -k256 --pl 5,6,8,12,16,20,24 --mm "
+                     "5000,3000,2000,1500,800,500,300 -a4");
     app.add_flag("--turborc", config::use_turborc, "Use TurboRC as backend");
     app.add_flag("--turboans", config::use_turboans, "Use TurboANS as backend");
     app.add_flag("--fse", config::use_fse,

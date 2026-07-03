@@ -55,13 +55,10 @@ static inline void cyccpy(uint8_t* src, uint32_t dis, uint32_t n) {
             memcpy8(src + dis, src);
         }
     } else {
-        // n >= 5
-        uint32_t i = 5;
-        src[0 + dis] = src[0];
-        src[1 + dis] = src[1];
-        src[2 + dis] = src[2];
-        src[3 + dis] = src[3];
-        src[4 + dis] = src[4];
+        uint32_t i = config::min_match_length;
+        for (uint32_t ii = 0; ii < i; ii++) {
+            src[ii + dis] = src[ii];
+        }
         while (i < n) {
             src[i + dis] = src[i];
             i++;
