@@ -13,10 +13,11 @@
 
 std::vector<uint32_t> config::max_matches{20};
 std::vector<uint32_t> config::prefix_lengths{5};
-uint32_t              config::blocks = 1;
-uint32_t              config::hash_bits = 0;
+std::vector<uint32_t> config::depth_limit_log{};
+std::vector<uint32_t> config::hash_bits{30};
+uint32_t              config::blocks = 256;
 uint32_t              config::passes = 1;
-uint32_t              config::threads = 1;
+uint32_t              config::threads = std::thread::hardware_concurrency();
 
 std::string config::load_hashchains = "";
 std::string config::load_tokens = "";
@@ -37,50 +38,6 @@ uint32_t config::verbosity = 0;
 bool config::level[30] = {};
 
 void config::print_config() {
-    int l = -1;
-    for (int i = 0; i < sizeof(config::level) / sizeof(config::level[0]); i++) {
-        if (level[i])
-            l = i;
-    }
-
-    std::cout << std::format("blocks={} passes={} threads={} hash_bits={}\n", blocks,
-                             passes, threads, hash_bits);
-
-    std::cout << std::format("prefix_lengths=[{}]\n", [&] {
-        std::string s;
-        for (size_t i = 0; i < prefix_lengths.size(); i++) {
-            if (i)
-                s += ',';
-            s += std::to_string(prefix_lengths[i]);
-        }
-        return s;
-    }());
-
-    std::cout << std::format("max_matches=[{}]\n", [&] {
-        std::string s;
-        for (size_t i = 0; i < max_matches.size(); i++) {
-            if (i)
-                s += ',';
-            s += std::to_string(max_matches[i]);
-        }
-        return s;
-    }());
-
-    std::cout << std::format("level={}\n", l);
-
-    std::cout << std::format(
-        "format={} turborc={} turboans={} fse={} huf={} "
-        "memcpy={} rans0={} rans1={}\n",
-        format, use_turborc, use_turboans, use_fse, use_huf, use_memcpy,
-        use_rans_static0, use_rans_static1);
-
-    if (!load_hashchains.empty())
-        std::cout << std::format("load_hashchains={}\n", load_hashchains);
-    if (!load_tokens.empty())
-        std::cout << std::format("load_tokens={}\n", load_tokens);
-
-    std::cout << std::format("stats={} metrics={} verbosity={}\n", stats, metrics,
-                             verbosity);
 }
 
 static auto fmt_mem(auto num) {
@@ -283,75 +240,4 @@ void config::report_progress() {
 
 void config::apply_level() {
     uint32_t T = std::thread::hardware_concurrency();
-
-    if (level[0]) {
-        threads = T;
-        blocks = 256;
-        prefix_lengths = {5};
-        max_matches = {5};
-        passes = 1;
-    }
-    if (level[1]) {
-        threads = T;
-        blocks = 256;
-        prefix_lengths = {5, 6, 8};
-        max_matches = {20, 10, 5};
-        passes = 1;
-    }
-    if (level[2]) {
-        threads = T;
-        blocks = 256;
-        prefix_lengths = {5, 6, 8};
-        max_matches = {100, 50, 20};
-        passes = 1;
-    }
-    if (level[3]) {
-        threads = T;
-        blocks = 256;
-        prefix_lengths = {5, 6, 8, 12};
-        max_matches = {200, 100, 70, 50};
-        passes = 1;
-    }
-    if (level[4]) {
-        threads = T;
-        blocks = 256;
-        prefix_lengths = {5, 6, 8, 12, 16};
-        max_matches = {200, 100, 70, 50, 40};
-        passes = 2;
-    }
-    if (level[5]) {
-        threads = T;
-        blocks = 256;
-        prefix_lengths = {5, 6, 8, 12, 16, 20};
-        max_matches = {300, 150, 90, 70, 50, 40};
-        passes = 2;
-    }
-    if (level[6]) {
-        threads = T;
-        blocks = 256;
-        prefix_lengths = {5, 6, 8, 12, 16, 20};
-        max_matches = {400, 250, 150, 100, 80, 60};
-        passes = 2;
-    }
-    if (level[7]) {
-        threads = T;
-        blocks = 256;
-        prefix_lengths = {5, 6, 8, 12, 16, 20, 24};
-        max_matches = {500, 300, 200, 150, 100, 70, 40};
-        passes = 3;
-    }
-    if (level[8]) {
-        threads = T;
-        blocks = 256;
-        prefix_lengths = {5, 6, 8, 12, 16, 20, 24};
-        max_matches = {1000, 800, 600, 400, 200, 100, 100};
-        passes = 4;
-    }
-    if (level[9]) {
-        threads = T;
-        blocks = 256;
-        prefix_lengths = {5, 6, 8, 12, 16, 20, 24};
-        max_matches = {5000, 3000, 2000, 1500, 800, 500, 300};
-        passes = 4;
-    }
 }

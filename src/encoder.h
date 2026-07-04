@@ -20,7 +20,8 @@ struct encoder {
     size_t                             bytes_loaded;
     std::vector<std::byte>             data;
     std::vector<std::vector<uint32_t>> chains;
-    std::vector<token> tokens;
+    std::vector<std::vector<uint32_t>> tables;
+    std::vector<token>                 tokens;
 
     bool are_tokens_available;
 
