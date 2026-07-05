@@ -76,7 +76,16 @@ def main():
         sys.exit(1)
 
     groups = defaultdict(list)
-    comp_totals = defaultdict(lambda: {"ratio": 0.0, "ctime": 0.0, "dtime": 0.0, "cmem": 0.0, "dmem": 0.0, "count": 0})
+    comp_totals = defaultdict(
+        lambda: {
+            "ratio": 0.0,
+            "ctime": 0.0,
+            "dtime": 0.0,
+            "cmem": 0.0,
+            "dmem": 0.0,
+            "count": 0,
+        }
+    )
 
     with open(filename, "r", encoding="utf-8") as f:
         for line in f:
@@ -87,7 +96,7 @@ def main():
             row = parse_line(line)
             if row:
                 groups[row["file"]].append(row)
-                
+
                 # Accumulate values for total aggregation
                 c = row["compressor"]
                 comp_totals[c]["ratio"] += row["ratio"]
@@ -110,14 +119,16 @@ def main():
     # Process and print aggregated totals table
     total_rows = []
     for compressor, data in comp_totals.items():
-        total_rows.append({
-            "compressor": compressor,
-            "ratio": data["ratio"],
-            "ctime": data["ctime"],
-            "dtime": data["dtime"],
-            "cmem": data["cmem"],
-            "dmem": data["dmem"]
-        })
+        total_rows.append(
+            {
+                "compressor": compressor,
+                "ratio": data["ratio"],
+                "ctime": data["ctime"],
+                "dtime": data["dtime"],
+                "cmem": data["cmem"],
+                "dmem": data["dmem"],
+            }
+        )
 
     total_rows.sort(key=lambda x: (x["ratio"], x["ctime"]))
     format_table(total_rows[:top_count], "TOTAL PERFORMANCE ACROSS ALL FILES (SUMMED)")
@@ -125,4 +136,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

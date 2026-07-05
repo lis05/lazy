@@ -22,3 +22,4 @@ project.txt
 .benchmark*
 datasets*
 benchmark-*
+.*

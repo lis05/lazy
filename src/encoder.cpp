@@ -413,9 +413,11 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
         std::vector<std::vector<uint32_t>>          dp_pos(subblocks.size());
         std::vector<std::vector<estimators::state>> dp_state(subblocks.size());
 
-        uint32_t subblock_index = 0;
+        uint32_t subblock_index = subblocks.size();
         uint32_t chains_end = end;
+        std::reverse(subblocks.begin(), subblocks.end());
         for (auto [sub_start, sub_end] : subblocks) {
+            subblock_index--;
             pool.enqueue([&, sub_start, sub_end, subblock_index]() mutable {
                 sub_start += start;
                 sub_end += start;
@@ -562,7 +564,6 @@ std::vector<token> encoder::encode(uint32_t pass, estimators::smart &est) {
                 finished.count_down();
                 config::counter += subblock_size;
             });
-            subblock_index++;
         }
         finished.wait();
         for (auto &e : dp_tokens) {

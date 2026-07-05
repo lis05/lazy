@@ -35,22 +35,114 @@ from typing import Optional
 # {input}  is replaced with the actual file path at runtime
 # {output} is replaced with the destination path at runtime
 
+decomp_iters = 15
 COMPRESSORS = [
     {
-        "name": "lzmpo -9rc",
-        "compress":   ["./build/lzmpo", "-e", "-i",  "{input}", "-o", "{output}",
-        "-9", "--turborc"],
+        "name": "lzmpo medium",
+        "compress": [
+            "./build/lzmpo",
+            "-e",
+            "-i",
+            "{input}",
+            "-o",
+            "{output}",
+            "-T16",
+            "-k32",
+            "--pl",
+            "16,12,8,6,5",
+            "--mm",
+            "100,100,100,100,100",
+            "--dl",
+            "30,29,28,27,27",
+            "--hb",
+            "30,29,28,27,27",
+            "-a2",
+        ],
         "decompress": ["./build/lzmpo", "-d", "-i", "{input}", "-o", "{output}"],
-        "comp_iters":   1,
-        "decomp_iters": 5,
+        "comp_iters": 1,
+        "decomp_iters": decomp_iters,
+    },
+    {
+        "name": "lzmpo light",
+        "compress": [
+            "./build/lzmpo",
+            "-e",
+            "-i",
+            "{input}",
+            "-o",
+            "{output}",
+            "-T16",
+            "-k32",
+            "--pl",
+            "16,12,8,6,5",
+            "--mm",
+            "100,100,100,100,100",
+            "--dl",
+            "30,28,27,26,26",
+            "--hb",
+            "30,28,27,26,26",
+            "-a2",
+        ],
+        "decompress": ["./build/lzmpo", "-d", "-i", "{input}", "-o", "{output}"],
+        "comp_iters": 1,
+        "decomp_iters": decomp_iters,
+    },
+    {
+        "name": "zstd -22",
+        "compress": ["zstd", "-22", "-T16", "--ultra", "{input}", "-o", "{output}"],
+        "decompress": ["zstd", "-d", "{input}", "-o", "{output}"],
+        "comp_iters": 1,
+        "decomp_iters": decomp_iters,
+    },
+    {
+        "name": "zstd -22 --long=30",
+        "compress": [
+            "zstd",
+            "-22",
+            "-T16",
+            "--ultra",
+            "--long=30",
+            "{input}",
+            "-o",
+            "{output}",
+        ],
+        "decompress": ["zstd", "-d", "{input}", "-o", "{output}", "--long=30"],
+        "comp_iters": 1,
+        "decomp_iters": decomp_iters,
+    },
+    {
+        "name": "lzma -9",
+        "compress": ["lzma", "-9", "-c", "-k", "{input}"],
+        "decompress": ["lzma", "-d", "-c", "-k", "{input}"],
+        "compress_stdout": True,
+        "decompress_stdout": True,
+        "comp_iters": 1,
+        "decomp_iters": decomp_iters,
+    },
+    {
+        "name": "xz (lzma2 1gb)",
+        "compress": [
+            "xz",
+            "-9",
+            "-c",
+            "-e",
+            "--lzma2=preset=9e,dict=1GiB,lc=4,pb=0",
+            "-k",
+            "{input}",
+        ],
+        "decompress": ["xz", "-d", "-c", "-k", "{input}"],
+        "compress_stdout": True,
+        "decompress_stdout": True,
+        "comp_iters": 1,
+        "decomp_iters": decomp_iters,
     },
 ]
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Memory tracking via /proc/<pid>/status
 # VmPeak = peak virtual memory ever allocated by the process (in kB)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _poll_vmpeak(pid: int, result: list, stop_event: threading.Event) -> None:
     """
@@ -89,7 +181,14 @@ def run_timed(
 
     When stdout_path is None, stdout is discarded (DEVNULL).
     """
-    stdout_target = subprocess.PIPE if stdout_path else subprocess.DEVNULL
+    if stdout_path:
+        out_fh = open(stdout_path, "wb")
+        stdout_target = out_fh
+    else:
+        out_fh = None
+        stdout_target = subprocess.DEVNULL
+
+    t0 = time.perf_counter()
 
     proc = subprocess.Popen(
         cmd,
@@ -98,7 +197,7 @@ def run_timed(
         stderr=subprocess.DEVNULL,
     )
 
-    # Kick off the memory monitor before we start the clock
+    # Kick off the memory monitor
     peak_result: list = []
     stop_evt = threading.Event()
     monitor = threading.Thread(
@@ -108,21 +207,11 @@ def run_timed(
     )
     monitor.start()
 
-    t0 = time.perf_counter()
-
-    if stdout_path:
-        # Stream stdout to file without accumulating it all in RAM
-        with open(stdout_path, "wb") as out_fh:
-            while True:
-                chunk = proc.stdout.read(1 << 16)  # 64 KiB chunks
-                if not chunk:
-                    break
-                out_fh.write(chunk)
-        proc.wait()
-    else:
-        proc.wait()
-
+    proc.wait()
     elapsed = time.perf_counter() - t0
+
+    if out_fh:
+        out_fh.close()
 
     stop_evt.set()
     monitor.join(timeout=0.5)
@@ -140,6 +229,7 @@ def run_timed(
 # Hashing (for decompression verification)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def file_sha256(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -152,14 +242,15 @@ def file_sha256(path: Path) -> str:
 # Result container
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class BenchResult:
     name: str
     original_bytes: int
     compressed_bytes: int = 0
-    comp_times:   list = field(default_factory=list)   # seconds
+    comp_times: list = field(default_factory=list)  # seconds
     decomp_times: list = field(default_factory=list)
-    comp_peaks:   list = field(default_factory=list)   # kB
+    comp_peaks: list = field(default_factory=list)  # kB
     decomp_peaks: list = field(default_factory=list)
     error: Optional[str] = None
 
@@ -204,6 +295,7 @@ class BenchResult:
 # Command helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _substitute(template: list, input_path: Path, output_path: Path) -> list:
     """Replace {input} and {output} tokens in a command template."""
     return [
@@ -215,6 +307,7 @@ def _substitute(template: list, input_path: Path, output_path: Path) -> list:
 # ──────────────────────────────────────────────────────────────────────────────
 # Core benchmark logic for one (compressor, file) pair
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def bench_compressor(
     cfg: dict,
@@ -229,10 +322,10 @@ def bench_compressor(
     result = BenchResult(name=name, original_bytes=original_bytes)
 
     # Dedicate a unique path per (file, compressor) so runs don't clobber each other
-    comp_out   = comp_dir   / f"{src_file.name}__{safe_name}"
+    comp_out = comp_dir / f"{src_file.name}__{safe_name}"
     decomp_out = decomp_dir / f"{src_file.name}__{safe_name}"
 
-    use_comp_stdout   = cfg.get("compress_stdout",   False)
+    use_comp_stdout = cfg.get("compress_stdout", False)
     use_decomp_stdout = cfg.get("decompress_stdout", False)
 
     try:
@@ -288,7 +381,9 @@ def bench_compressor(
         if not decomp_out.exists():
             raise RuntimeError(f"Decompressed output missing: {decomp_out}")
         if file_sha256(src_file) != file_sha256(decomp_out):
-            raise RuntimeError("Decompressed output does not match original (SHA-256 mismatch)")
+            raise RuntimeError(
+                "Decompressed output does not match original (SHA-256 mismatch)"
+            )
 
     except Exception as exc:
         result.error = str(exc)
@@ -323,34 +418,38 @@ def format_table(file_results: list) -> str:
     Errored rows appear at the bottom, unnumbered.
     """
     # First pass: build all cell strings so we can size the columns
-    all_sections: list = []   # list of (filename, header_cells, data_rows)
+    all_sections: list = []  # list of (filename, header_cells, data_rows)
     all_data_rows: list = []
 
     for filename, results in file_results:
-        valid   = sorted([r for r in results if not r.error], key=lambda r: r.ratio)
+        valid = sorted([r for r in results if not r.error], key=lambda r: r.ratio)
         errored = [r for r in results if r.error]
 
         rows: list = []
         for rank, r in enumerate(valid, 1):
-            rows.append([
-                str(rank),
-                r.name,
-                f"{r.ratio_pct:.5f}%",
-                f"{r.comp_speed_mbs:.2f}",
-                f"{r.comp_mem_mb:.1f}",
-                f"{r.decomp_speed_mbs:.2f}",
-                f"{r.decomp_mem_mb:.1f}",
-            ])
+            rows.append(
+                [
+                    str(rank),
+                    r.name,
+                    f"{r.ratio_pct:.5f}%",
+                    f"{r.comp_speed_mbs:.2f}",
+                    f"{r.comp_mem_mb:.1f}",
+                    f"{r.decomp_speed_mbs:.2f}",
+                    f"{r.decomp_mem_mb:.1f}",
+                ]
+            )
         for r in errored:
-            rows.append([
-                "ERR",
-                r.name,
-                "–",
-                "–",
-                "–",
-                "–",
-                f"ERROR: {r.error}",
-            ])
+            rows.append(
+                [
+                    "ERR",
+                    r.name,
+                    "–",
+                    "–",
+                    "–",
+                    "–",
+                    f"ERROR: {r.error}",
+                ]
+            )
         all_sections.append((filename, rows))
         all_data_rows.extend(rows)
 
@@ -361,7 +460,7 @@ def format_table(file_results: list) -> str:
         for i in range(min(n_cols, len(row))):
             widths[i] = max(widths[i], len(str(row[i])))
 
-    sep    = "  ".join("─" * w for w in widths)
+    sep = "  ".join("─" * w for w in widths)
     header = _fmt_row(COL_HEADERS, widths)
 
     lines: list = []
@@ -372,7 +471,7 @@ def format_table(file_results: list) -> str:
         lines.append(sep)
         for row in rows:
             lines.append(_fmt_row(row, widths))
-        lines.append("")   # blank line between file groups
+        lines.append("")  # blank line between file groups
 
     return "\n".join(lines)
 
@@ -380,6 +479,7 @@ def format_table(file_results: list) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 # Entry point
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     if len(sys.argv) != 2:
@@ -398,14 +498,14 @@ def main() -> None:
         sys.exit(1)
 
     # Work directories created in the current working directory
-    comp_dir   = Path(".benchmark-compressed")
+    comp_dir = Path(".benchmark-compressed")
     decomp_dir = Path(".benchmark-decompressed")
     comp_dir.mkdir(exist_ok=True)
     decomp_dir.mkdir(exist_ok=True)
 
     file_results: list = []
     total = len(src_files) * len(COMPRESSORS)
-    done  = 0
+    done = 0
 
     for src_file in src_files:
         print(f"\n{'═' * 62}", flush=True)
@@ -415,8 +515,11 @@ def main() -> None:
         results: list = []
         for cfg in COMPRESSORS:
             done += 1
-            print(f"  [{done:>{len(str(total))}}/{total}] {cfg['name']} ... ",
-                  end="", flush=True)
+            print(
+                f"  [{done:>{len(str(total))}}/{total}] {cfg['name']} ... ",
+                end="",
+                flush=True,
+            )
             r = bench_compressor(cfg, src_file, comp_dir, decomp_dir)
             results.append(r)
             if r.error:

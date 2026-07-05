@@ -112,7 +112,9 @@ static void decode(const std::string &filename_in, const std::string &filename_o
     auto [orig_size, streams] = format.read_block(ptr_in + 1);
 
     auto [ptr_out, out] = mmap_file(filename_out, false, orig_size);
-    decoder.decode(orig_size, ptr_out, streams);
+    //for (int i = 0; i < 100; i++) {
+        decoder.decode(orig_size, ptr_out, streams);
+    //}
 
     std::free(streams.controls);
     std::free(streams.literals);
@@ -177,14 +179,14 @@ int main(int argc, char **argv) {
     app.add_option("-o", output_file, "Output file");
 
     app.add_option("--pl", config::prefix_lengths,
-                   "Comma-separated list of prefix lengths")
+                   "Comma-separated list of prefix lengths in decreasing order")
         ->delimiter(',');
     app.add_option("--mm", config::max_matches,
                    "Comma-separated list of max matches per prefix length")
         ->delimiter(',');
     app.add_option(
            "--dl", config::depth_limit_log,
-           "Comma-separated list of depth limit per prefix length (NUM[G|M|K])")
+           "Comma-separated list of depth limit log2 per prefix length")
         ->delimiter(',');
     app.add_option("--hb", config::hash_bits,
                    "Comma-separated list of hash bits per prefix length")
@@ -236,27 +238,29 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    if (!config::use_turborc && !config::use_turboans && !config::use_fse &&
-        !config::use_huf && !config::use_memcpy && !config::use_rans_static0 &&
-        !config::use_rans_static1) {
-        config::use_rans_static0 = true;
-    }
+    if (run_encoder) {
+        if (!config::use_turborc && !config::use_turboans && !config::use_fse &&
+            !config::use_huf && !config::use_memcpy && !config::use_rans_static0 &&
+            !config::use_rans_static1) {
+            config::use_rans_static0 = true;
+        }
 
-    for (auto hb : config::hash_bits) {
-        if (hb == 0 || hb > 32) {
-            std::cerr << "Invalid number of hash bits" << std::endl;
+        for (auto hb : config::hash_bits) {
+            if (hb == 0 || hb > 32) {
+                std::cerr << "Invalid number of hash bits" << std::endl;
+                return -1;
+            }
+        }
+
+        config::apply_level();
+
+        if (config::prefix_lengths.size() != config::max_matches.size() ||
+            config::prefix_lengths.size() != config::depth_limit_log.size() ||
+            config::prefix_lengths.size() != config::hash_bits.size()) {
+            std::cerr << "Inconsistent number of parameters --pl --mm --dl --hb"
+                      << std::endl;
             return -1;
         }
-    }
-
-    config::apply_level();
-
-    if (config::prefix_lengths.size() != config::max_matches.size() ||
-        config::prefix_lengths.size() != config::depth_limit_log.size() ||
-        config::prefix_lengths.size() != config::hash_bits.size()) {
-        std::cerr << "Inconsistent number of parameters --pl --mm --dl --hb"
-                  << std::endl;
-        return -1;
     }
 
     if (print_config) {

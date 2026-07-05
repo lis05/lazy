@@ -4,9 +4,6 @@ set -m
 compressor=$1
 to_encode=$2
 
-# Define the CPU core to pin for decompression (default is core 0)
-DECODE_CORE=0
-
 # Shift positional parameters by 2, leaving only the trailing arguments in "$@"
 shift 2
 
@@ -52,10 +49,11 @@ encoded_tmp=$(mktemp)
 decoded_tmp=$(mktemp)
 enc_mem_file=$(mktemp)
 dec_mem_file=$(mktemp)
+time_tmp=$(mktemp)
 
 # Ensure temporary files are removed on exit (success or failure)
 cleanup() {
-    rm -f "$encoded_tmp" "$decoded_tmp" "$enc_mem_file" "$dec_mem_file"
+    rm -f "$encoded_tmp" "$decoded_tmp" "$enc_mem_file" "$dec_mem_file" "$time_tmp"
 }
 trap cleanup EXIT
 
@@ -102,41 +100,45 @@ enc_kb=${enc_kb:-0}
 enc_sec=$(awk -v s="$enc_start" -v e="$enc_end" 'BEGIN {printf "%.2f", (e - s) / 1000000000}')
 
 # ---------------------------------------------------------------------------
-# Decoding  (pinned to a single core)
+# Decoding (Run 5 times, standard execution environment)
 # ---------------------------------------------------------------------------
-echo "Decoding (Pinned to core ${DECODE_CORE}, forced single-thread)..."
+echo "Decoding (5 iterations)..."
 
-dec_start=$(date +%s%N)
+total_dec_sec=0
+max_dec_kb=0
 
-env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
-    taskset -c "${DECODE_CORE}" \
-    "$compressor" -d -i "$encoded_tmp" -o "$decoded_tmp" "$@" &
-dec_pid=$!
+for i in {1..5}; do
+    # Run decompression using /usr/bin/time to gather the real elapsed execution time.
+    # Format %e extracts the real (wall clock) elapsed time in seconds.
+    /usr/bin/time -f "%e" -o "$time_tmp" \
+        "$compressor" -d -i "$encoded_tmp" -o "$decoded_tmp" "$@" &
+    dec_pid=$!
 
-poll_vmpeak "$dec_pid" "$dec_mem_file" &
-poll_pid=$!
+    poll_vmpeak "$dec_pid" "$dec_mem_file" &
+    poll_pid=$!
 
-wait "$dec_pid"
-dec_status=$?
-wait "$poll_pid"
+    wait "$dec_pid"
+    dec_status=$?
+    wait "$poll_pid"
 
-dec_end=$(date +%s%N)
-
-if [ $dec_status -ne 0 ]; then
-    echo "Command failed with exit code $dec_status"
-    if [ $dec_status -eq 139 ]; then
-        echo "Error: Segmentation fault (Signal 11)"
-    elif [ $dec_status -gt 128 ]; then
-        echo "Error: Terminated by signal $((dec_status - 128))"
+    if [ $dec_status -ne 0 ]; then
+        echo "Iteration $i failed with exit code $dec_status"
+        exit 1
     fi
-    echo "To debug this failure, run:"
-    echo "$compressor -e -i $to_encode -o $encoded_tmp $* && taskset -c ${DECODE_CORE} gdb --args $compressor -d -i $encoded_tmp -o $decoded_tmp $*"
-    exit 1
-fi
 
-dec_kb=$(cat "$dec_mem_file")
-dec_kb=${dec_kb:-0}
-dec_sec=$(awk -v s="$dec_start" -v e="$dec_end" 'BEGIN {printf "%.4f", (e - s) / 1000000000}')
+    # Read elapsed time and peak memory consumption for this specific run
+    iter_sec=$(cat "$time_tmp")
+    iter_kb=$(cat "$dec_mem_file")
+    iter_kb=${iter_kb:-0}
+
+    total_dec_sec=$(awk -v t="$total_dec_sec" -v i="$iter_sec" 'BEGIN {print t + i}')
+    if [ "$iter_kb" -gt "$max_dec_kb" ]; then
+        max_dec_kb=$iter_kb
+    fi
+done
+
+dec_sec=$(awk -v t="$total_dec_sec" 'BEGIN {printf "%.4f", t / 5}')
+dec_mb=$(awk -v k="$max_dec_kb" 'BEGIN {printf "%.2f", k/1024}')
 
 # ---------------------------------------------------------------------------
 # Report
@@ -146,11 +148,10 @@ comp_size=$(psize "$encoded_tmp")
 ratio=$(awk -v c="$comp_size" -v o="$orig_size" 'BEGIN {printf "%.2f", (c/o)*100}')
 
 enc_mb=$(awk -v k="$enc_kb" 'BEGIN {printf "%.2f", k/1024}')
-dec_mb=$(awk -v k="$dec_kb" 'BEGIN {printf "%.2f", k/1024}')
 
 echo "    Compression: $(phsize "$encoded_tmp") ($(psize "$encoded_tmp") bytes) / $(phsize "$to_encode") [Ratio: ${ratio}%]"
 echo "    Compression Time   : ${enc_sec} s"
-echo "    Decompression Time : ${dec_sec} s"
+echo "    Decompression Time : ${dec_sec} s (Average of 5 runs)"
 echo "    Max VmPeak (Enc)   : ${enc_mb} MB"
 echo "    Max VmPeak (Dec)   : ${dec_mb} MB"
 
@@ -163,3 +164,4 @@ else
     echo "FAIL"
     exit 1
 fi
+
